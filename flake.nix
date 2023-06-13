@@ -22,7 +22,7 @@
 
         haskellPackages = pkgs.haskellPackages;
 
-        packageName = "Generic";
+        packageName = "vox-hs";
 
         jailbreakUnbreak = pkg:
           pkgs.haskell.lib.doJailbreak (pkg.overrideAttrs (_: { meta = { }; }));
