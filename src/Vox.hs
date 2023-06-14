@@ -17,6 +17,10 @@ import qualified Data.ByteString.Lazy as BL
 
 -- vector
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector as V
+
+-- containers
+import Data.Map.Strict as M
 
 type ParseError = (ByteOffset, String)
 
@@ -28,15 +32,29 @@ type ChunkId = String
 
 type VoxFile = [VoxChunk]
 
+type VoxString = String
+
+type VoxDict = M.Map VoxString VoxString
+
 data Main = Main { totalSize :: Int32 } deriving (Show)
 data Pack = Pack { numModels :: Int32 } deriving (Show)
 data Size = Size { x :: Int32, y :: Int32, z :: Int32 } deriving (Show)-- z is in the direction of gravity (Not oriented as in opengl)
 data XYZI = XYZI { numVoxels :: Int32, voxels :: U.Vector (Int8, Int8, Int8, Int8) } deriving (Show)
 data RGBA = RGBA { rgba :: U.Vector (Int8, Int8, Int8, Int8) } deriving (Show)
+data NTRN = NTRN { nTRNId :: Int32
+                 , nTRNAttr :: VoxDict
+                 , nTRNChildId :: Int32
+                 , nTRNReserved :: Int32
+                 , nTRNLayerId :: Int32
+                 , nTRNNumFrames :: Int32
+                 , nTRNFrameAttrs :: V.Vector VoxDict
+                 }
+  deriving (Show)
 data VoxChunk = VMain Main
               | VPack Pack
               | VModel Size XYZI
               | VRGBA RGBA
+              | VnTRN NTRN
   deriving (Show)
 
 withVoxFile :: FilePath -> (Either ParseError VoxFile -> IO ()) -> IO ()
@@ -87,7 +105,7 @@ parseChunkList totalSize = do
                                 "SIZE" -> parseSize size 
                                 "XYZI" -> fail $ "Chunk 'XYZI' found but not following chunk 'SIZE'."
                                 "RGBA" -> parseRGBA size
-                                --"nTRN" -> notImplemented size
+                                "nTRN" -> parsenTRN size
                                 --"nGRP" -> notImplemented size
                                 --"nSHP" -> notImplemented size
                                 --"MATL" -> notImplemented size
@@ -99,6 +117,39 @@ parseChunkList totalSize = do
       else do
       following <- parseChunkList (totalSize - chunkSize)
       return $ nextChunk : following
+
+parseVoxString :: Get (VoxString, ChunkSize)
+parseVoxString = do
+  strSize <- getWord32le
+  str <- getNChars $ fromIntegral strSize
+  return (str, 4 + strSize)
+
+parseVoxDict :: Get (VoxDict, ChunkSize)
+parseVoxDict = do
+  dictSize <- getInt32le
+  go dictSize (M.empty, 4)
+  where
+    go 0 acc = return acc
+    go i (dict, size) = do
+      (key, keySize) <- parseVoxString
+      (value, valueSize) <- parseVoxString
+      go (i-1) (M.insert key value dict, size + keySize + valueSize)
+
+parsenTRN :: ChunkDataSize -> Get (VoxChunk, ChunkSize)
+parsenTRN nTRNSize = do
+  nTRNId <- getInt32le
+  (nTRNAttr, nTRNAttrSize) <- parseVoxDict
+  nTRNChildId <- getInt32le
+  nTRNReserved <- getInt32le
+  nTRNLayerId <- getInt32le
+  nTRNNumFrames <- getInt32le
+  (nTRNFrameAttrs, nTRNFrameAttrsSize) <- go nTRNNumFrames (V.empty, 0)
+  return (VnTRN $ NTRN {..}, (4 * 5) + nTRNAttrSize + nTRNFrameAttrsSize)
+  where
+    go 0 acc = return acc
+    go i (vec, size) = do
+      (frameDict, frameDictSize) <- parseVoxDict
+      go (i-1) (vec `V.snoc` frameDict, size + frameDictSize)
 
 parsePack :: ChunkDataSize -> Get (VoxChunk, ChunkSize)
 parsePack packSize =
