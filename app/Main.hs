@@ -1,4 +1,7 @@
 module Main where
 
+-- vox-hs
+import Vox
+
 main :: IO ()
-main = withRiffWile "./deer.vox" print
+main = withVoxFile "./deer.vox" print

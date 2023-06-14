@@ -88,16 +88,17 @@ parseChunkList totalSize = do
       following <- parseChunkList (totalSize - chunkSize)
       return $ nextChunk : following
 
-data Main = Main { totalSize :: Int32 }
-data Pack = Pack { numModels :: Int32 }
-data Size = Size { x :: Int32, y :: Int32, z :: Int32 } -- z is in the direction of gravity (Not oriented as in opengl)
-data XYZI = XYZI { numVoxels :: Int32, voxels :: U.Vector (Int8, Int8, Int8, Int8) }
-data RGBA = RGBA { rgba :: U.Vector (Int8, Int8, Int8, Int8) }
+data Main = Main { totalSize :: Int32 } deriving (Show)
+data Pack = Pack { numModels :: Int32 } deriving (Show)
+data Size = Size { x :: Int32, y :: Int32, z :: Int32 } deriving (Show)-- z is in the direction of gravity (Not oriented as in opengl)
+data XYZI = XYZI { numVoxels :: Int32, voxels :: U.Vector (Int8, Int8, Int8, Int8) } deriving (Show)
+data RGBA = RGBA { rgba :: U.Vector (Int8, Int8, Int8, Int8) } deriving (Show)
 data VoxChunk = VMain Main
               | VPack Pack
               | VSize Size
               | VXYZI XYZI
               | VRGBA RGBA
+  deriving (Show)
 
 parsePack :: ChunkDataSize -> Get VoxChunk
 parsePack packSize =
