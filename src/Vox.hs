@@ -7,3 +7,4 @@ module Vox
 import Vox.Type as X
 import Vox.Parse as X
 import Vox.Write as X
+import Vox.Draw as X
