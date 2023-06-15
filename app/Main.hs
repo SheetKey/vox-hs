@@ -4,7 +4,15 @@ module Main where
 import Vox
 
 main :: IO ()
-main = withVoxFile "./deer.vox" $ \leftright ->
-  case leftright of
-    Left err -> print err
-    Right voxFile -> writeVoxFile "./deer2.vox" voxFile
+main = do
+  let voxFile = drawCubeBottomLeft 10 10 10 0 0 0 1 emptyVoxFile
+  print voxFile
+  writeVoxFile "./test.vox" voxFile
+  
+
+  
+--  withVoxFile "./deer.vox" $ \leftright ->
+--    case leftright of
+--      Left err -> print err
+--      Right voxFile -> writeVoxFile "./deer2.vox" voxFile
+--  withVoxFile "./deer.vox" print
