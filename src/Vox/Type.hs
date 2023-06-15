@@ -14,8 +14,8 @@ import Data.Binary.Get
 import qualified Data.ByteString.Lazy as BL
 
 -- vector
-import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 
 -- containers
 import Data.Map.Strict as M
@@ -60,3 +60,14 @@ data VoxChunk = VPack Pack
               | VRGBA RGBA
               | VnTRN NTRN
   deriving (Show)
+
+emptyVoxFile :: VoxFile
+emptyVoxFile = ( Main 16
+               , [ VPack (Pack 0) ]
+               )
+
+addModel :: (Size, XYZI) -> VoxFile -> VoxFile
+addModel (size, xyzi) (Main ts, (VPack (Pack m)) : chunks) =
+  ( Main $ ts + 40 + (fromIntegral (numVoxels xyzi) * 4) -- 12 for size chunk, 12 for xyzi chunk, 12 for size data (x,y,z), 4 for numVoxels, 4 * numVoxels for voxels
+  , (VPack (Pack (m + 1))) : (VModel size xyzi) : chunks
+  )

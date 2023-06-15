@@ -19,8 +19,8 @@ import Data.Binary.Get
 import qualified Data.ByteString.Lazy as BL
 
 -- vector
-import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 
 -- containers
 import Data.Map.Strict as M
