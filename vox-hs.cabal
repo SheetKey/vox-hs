@@ -35,6 +35,7 @@ library
                      Gox.Type
                      Gox.Parse
                      Gox.Write
+                     Gox.Util
 
     -- Modules included in this executable, other than Main.
     -- other-modules:
