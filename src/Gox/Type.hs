@@ -26,6 +26,7 @@ data GoxChunk = GBL16 BL16
               | GLAYR LAYR
               | GMaterial Material
               | Skipped
+              | None
               deriving (Show)
 
 data BL16 = BL16
@@ -57,9 +58,11 @@ fromChunk (GBL16 c) = GoxFile (V.singleton c) V.empty V.empty
 fromChunk (GLAYR c) = GoxFile V.empty (V.singleton c) V.empty
 fromChunk (GMaterial c) = GoxFile V.empty V.empty (V.singleton c)
 fromChunk Skipped = GoxFile V.empty V.empty V.empty
+fromChunk None = GoxFile V.empty V.empty V.empty
 
 addChunk :: GoxChunk -> GoxFile -> GoxFile
 addChunk (GBL16 c) GoxFile {..} = GoxFile { blocks = blocks `V.snoc` c, .. }
 addChunk (GLAYR c) GoxFile {..} = GoxFile { layers = layers `V.snoc` c, .. }
 addChunk (GMaterial c) GoxFile {..} = GoxFile { materials = materials `V.snoc` c, .. }
 addChunk Skipped goxFile = goxFile
+addChunk None goxFile = goxFile
