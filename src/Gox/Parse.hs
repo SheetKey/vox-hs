@@ -4,6 +4,7 @@ module Gox.Parse where
 
 -- vox-hs
 import Gox.Type
+import Gox.Util
 
 -- base
 import System.IO (withBinaryFile, IOMode(..))

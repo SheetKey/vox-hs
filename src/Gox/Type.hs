@@ -74,17 +74,3 @@ data Material = Material
   deriving (Show)
 
 type ParseError = (ByteOffset, String)
-
-fromChunk :: GoxChunk -> GoxFile
-fromChunk (GBL16 c) = GoxFile (V.singleton c) V.empty V.empty
-fromChunk (GLAYR c) = GoxFile V.empty (V.singleton c) V.empty
-fromChunk (GMaterial c) = GoxFile V.empty V.empty (V.singleton c)
-fromChunk Skipped = GoxFile V.empty V.empty V.empty
-fromChunk None = GoxFile V.empty V.empty V.empty
-
-addChunk :: GoxChunk -> GoxFile -> GoxFile
-addChunk (GBL16 c) GoxFile {..} = GoxFile { blocks = c `V.cons` blocks, .. }
-addChunk (GLAYR c) GoxFile {..} = GoxFile { layers = c `V.cons` layers, .. }
-addChunk (GMaterial c) GoxFile {..} = GoxFile { materials = c `V.cons` materials, .. }
-addChunk Skipped goxFile = goxFile
-addChunk None goxFile = goxFile
