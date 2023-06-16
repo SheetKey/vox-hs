@@ -44,14 +44,14 @@ instance Show BL16 where
 data LAYR = LAYR
   { layrName    :: String
   , mat         :: M44 Float
-  , layrId      :: Int
-  , baseId      :: Int
-  , materialIdx :: Int
+  , layrId      :: Int32
+  , baseId      :: Int32
+  , materialIdx :: Int32
   , mImgPath    :: Maybe String
   , mBox        :: Maybe (M44 Float)
   , mShape      :: Maybe String
   , mColor      :: Maybe (V4 Int8)
-  , visible     :: Int
+  , visible     :: Int8
   , blockData   :: V.Vector LAYRBlockData
   }
   deriving (Show)
