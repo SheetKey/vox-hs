@@ -46,7 +46,7 @@ data Material = Material
   , baseColor :: V4 Float
   , metallic :: Float
   , roughness :: Float
-  , emission :: Float
+  , emission :: V3 Float
   }
   deriving (Show)
 

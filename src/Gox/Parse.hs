@@ -55,8 +55,8 @@ getGoxFile = do
 parseChunks :: Get GoxFile
 parseChunks = do
   chunk <- parseChunk
-  continue <- isEmpty
-  if not continue
+  dontContinue <- isEmpty
+  if dontContinue
     then return $ fromChunk chunk
     else do following <- parseChunks
             return $ addChunk chunk following
@@ -138,10 +138,14 @@ parseMATE = do
                  then fail $ "Expected dict key 'emission' but found '" ++ name ++ "'."
                  else return ()
   emissionVSize <- getWord32le
-  emission <- if fromIntegral emissionVSize /= sizeOf (undefined :: Float)
-               then fail $ "Expected 'emissionVSize == " ++ show (sizeOf (undefined :: Float)) ++
-                   "' but found '" ++ show (fromIntegral emissionVSize) ++ "'."
-              else getFloatle
+  emission <- if fromIntegral emissionVSize /= (3 * sizeOf (undefined :: Float))
+               then fail $ "Expected 'emissionVSize == "
+                    ++ show (3 * sizeOf (undefined :: Float)) ++
+                    "' but found '" ++ show (fromIntegral emissionVSize) ++ "'."
+              else do a <- getFloatle
+                      b <- getFloatle
+                      c <- getFloatle
+                      return $ V3 a b c
   -- final key size of a dict should be '0' to signal end of dict
   zero <- getWord32le
   if zero /= 0
