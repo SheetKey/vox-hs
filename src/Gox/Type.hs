@@ -20,21 +20,26 @@ data GoxFile = GoxFile
   , layers :: V.Vector LAYR
   , materials :: V.Vector Material
   }
+  deriving (Show)
 
 data GoxChunk = GBL16 BL16
               | GLAYR LAYR
               | GMaterial Material
               | Skipped
+              deriving (Show)
 
 data BL16 = BL16
   { voxelData :: Image PixelRGBA8
   }
+instance Show BL16 where
+  show _ = "BL16"
 
 data LAYR = LAYR
   { name :: String
   , mat  :: M44 Float
   , _id  :: Int
   }
+  deriving (Show)
 
 data Material = Material
   { materialName :: String
@@ -43,6 +48,7 @@ data Material = Material
   , roughness :: Float
   , emission :: Float
   }
+  deriving (Show)
 
 type ParseError = (ByteOffset, String)
 
