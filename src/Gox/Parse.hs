@@ -96,23 +96,23 @@ parseLAYR = do
   blockData <- parseBlocks numberOfBlocks V.empty
   -- dict
   -- name
-  _ <- parseDictKey 4 "name"
+  _ <- parseDictKey 4 "name" "LAYR"
   nameVSize <- getWord32le
   layrName <- getNChars (fromIntegral nameVSize)
   -- mat
-  _ <- parseDictKey 3 "mat"
+  _ <- parseDictKey 3 "mat" "LAYR"
   mat <- parseDictValue "mat" (fromIntegral $ 16 * sizeOf (undefined :: Float)) parseM44
   -- id
   -- it seems 'id' uses Int32, not documented
-  _ <- parseDictKey 2 "id"
+  _ <- parseDictKey 2 "id" "LAYR"
   layrId <- parseDictValue "id" 4 getInt32le 
   -- baseId
   -- it seems 'base_id' uses Int32, not documented
-  _ <- parseDictKey 7 "base_id"
+  _ <- parseDictKey 7 "base_id" "LAYR"
   baseId <- parseDictValue "base_id" 4 getInt32le 
   -- material
   -- it seems 'material uses Int32, not documented
-  _ <- parseDictKey 8 "material"
+  _ <- parseDictKey 8 "material" "LAYR"
   materialIdx <- parseDictValue "material" 4 getInt32le 
   -- mayebe img-path
   mImagePathKey <- lookAheadM $ parseDictKeyMaybe 8 "img-path"
@@ -134,7 +134,7 @@ parseLAYR = do
                         Just _  -> do
                           shapeVSize <- getWord32le
                           shapeV <- getNChars $ fromIntegral shapeVSize
-                          _ <- parseDictKey 5 "color"
+                          _ <- parseDictKey 5 "color" "LAYR"
                           color <- parseDictValue "color" 4 $ do
                             r <- getInt8
                             g <- getInt8
@@ -144,7 +144,7 @@ parseLAYR = do
                           return (Just shapeV, Just color)
   -- visible
   -- it seems 'visible' uses Int8, not documented
-  _ <- parseDictKey 7 "visible"
+  _ <- parseDictKey 7 "visible" "LAYR"
   visible <- parseDictValue "visible" 1 getInt8
   -- return
   return $ GLAYR $ LAYR {..}
@@ -165,11 +165,11 @@ parseBL16 size = do
 parseMATE :: Get GoxChunk
 parseMATE = do
   -- name
-  _ <- parseDictKey 4 "name"
+  _ <- parseDictKey 4 "name" "MATE"
   nameVSize <- getWord32le
   materialName <- getNChars (fromIntegral nameVSize)
   -- baseColor
-  _ <- parseDictKey 5 "color"
+  _ <- parseDictKey 5 "color" "MATE"
   baseColor <- parseDictValue "color" (fromIntegral $ 4 * sizeOf (undefined :: Float)) $ do
     r <- getFloatle
     g <- getFloatle
@@ -177,13 +177,13 @@ parseMATE = do
     a <- getFloatle
     return $ V4 r g b a
   -- metallic
-  _ <- parseDictKey 8 "metallic"
+  _ <- parseDictKey 8 "metallic" "MATE"
   metallic <- parseDictValue "metallic" (fromIntegral $ sizeOf (undefined :: Float)) getFloatle
   -- roughness
-  _ <- parseDictKey 9 "roughness"
+  _ <- parseDictKey 9 "roughness" "MATE"
   roughness <- parseDictValue "roughness" (fromIntegral $ sizeOf (undefined :: Float)) getFloatle
   -- emission
-  _ <- parseDictKey 8 "emission"
+  _ <- parseDictKey 8 "emission" "MATE"
   emission <- parseDictValue "emission" (fromIntegral $ 3 * sizeOf (undefined :: Float)) $ do
     a <- getFloatle
     b <- getFloatle
@@ -206,16 +206,16 @@ parseDictValue key expectedSize f = do
          ++ "' for key '" ++ key ++ "'."
     else f
 
-parseDictKey :: Word32 -> String -> Get ()
-parseDictKey expectedSize expectedKey = do
+parseDictKey :: Word32 -> String -> String -> Get ()
+parseDictKey expectedSize expectedKey belongsTo = do
   size <- getWord32le
   if size /= expectedSize
     then fail $ "Expected key size '" ++ show expectedSize ++ "' but found size '"
-    ++ show size ++ "' for key '" ++ expectedKey ++ "'."
+    ++ show size ++ "' for key '" ++ expectedKey ++ "' in chunk '" ++ belongsTo ++ "'."
     else do key <- getNChars $ fromIntegral size
             if key /= expectedKey
               then fail $ "Expected dict key '" ++ show expectedKey ++ "' but found '"
-                   ++ show key ++ "'."
+                   ++ show key ++ "' in chunk '" ++ show belongsTo ++ "'."
               else return ()
 
 parseDictKeyMaybe :: Word32 -> String -> Get (Maybe ())
