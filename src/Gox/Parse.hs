@@ -1,7 +1,33 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Gox.Parse where
 
 -- vox-hs
 import Gox.Type
+
+-- base
+import System.IO (withBinaryFile, IOMode(..))
+import Data.Word
+import Data.Int
+import Data.Char (chr)
+import Control.Monad (replicateM)
+import Foreign.Storable (sizeOf)
+
+-- binary
+import Data.Binary.Get
+
+-- bytestring
+import qualified Data.ByteString.Lazy as BL
+
+-- vector
+import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
+
+-- containers
+import Data.Map.Strict as M
+
+-- linear
+import Linear
 
 withGoxFile :: FilePath -> (Either ParseError GoxFile -> IO ()) -> IO ()
 withGoxFile filePath action = withBinaryFile filePath ReadMode $ \h -> do
@@ -24,18 +50,31 @@ getGoxFile = do
     if version /= 2
       then fail $ "GOX file has verion '" ++ show version ++ "'. Must have version '2'."
       else do
-      parseChunks
+      parseChunks 
 
-parseChunkList :: Get GoxFile
-parseChunkList = do
+parseChunks :: Get GoxFile
+parseChunks = do
+  chunk <- parseChunk
+  continue <- isEmpty
+  if not continue
+    then return $ fromChunk chunk
+    else do following <- parseChunks
+            return $ addChunk chunk following
+
+parseChunk :: Get GoxChunk
+parseChunk = do
   id <- getIdentifier
   size <- getWord32le
-  (nextChunk, chunkSize) <- case id of
-                              "BL16" -> f
-                              "LAYR" -> g
-                              "MATE" -> parseMATE
+  chunk <- case id of
+             --"BL16" -> f
+             --"LAYR" -> g
+             "MATE" -> parseMATE
+             _ -> do skip $ fromIntegral size
+                     return Skipped
+  _ <- getWord32le -- crc
+  return chunk
 
-parseMATE :: Get Material
+parseMATE :: Get GoxChunk
 parseMATE = do
   -- name
   nameKSize <- getWord32le
@@ -56,9 +95,9 @@ parseMATE = do
                  then fail $ "Expected dict key 'color' but found '" ++ name ++ "'."
                  else return ()
   baseColorVSize <- getWord32le
-  baseColor <- if baseColorVSize /= (4 * sizeOf (undefined :: Float))
+  baseColor <- if fromIntegral baseColorVSize /= (4 * sizeOf (undefined :: Float))
     then fail $ "Expected 'baseColorVSize == " ++ show (4 * (sizeOf (undefined :: Float)))
-         ++ "' but found '" ++ show baseColorVSize ++ "'."
+         ++ "' but found '" ++ show (fromIntegral baseColorVSize) ++ "'."
     else do r <- getFloatle
             g <- getFloatle
             b <- getFloatle
@@ -73,9 +112,9 @@ parseMATE = do
                  then fail $ "Expected dict key 'metallic' but found '" ++ name ++ "'."
                  else return ()
   metallicVSize <- getWord32le
-  metallic <- if metallicVSize /= sizeOf (undefined :: Float)
+  metallic <- if fromIntegral metallicVSize /= sizeOf (undefined :: Float)
               then fail $ "Expected 'metallicVSize == " ++ show (sizeOf (undefined :: Float)) ++
-                   "' but found '" ++ show metallicVSize ++ "'."
+                   "' but found '" ++ show (fromIntegral metallicVSize) ++ "'."
               else getFloatle
   -- roughness
   roughnessKSize <- getWord32le
@@ -86,9 +125,9 @@ parseMATE = do
                  then fail $ "Expected dict key 'roughness' but found '" ++ name ++ "'."
                  else return ()
   roughnessVSize <- getWord32le
-  roughness <- if roughnessVSize /= sizeOf (undefined :: Float)
+  roughness <- if fromIntegral roughnessVSize /= sizeOf (undefined :: Float)
                then fail $ "Expected 'roughnessVSize == " ++ show (sizeOf (undefined :: Float)) ++
-                   "' but found '" ++ show roughnessVSize ++ "'."
+                   "' but found '" ++ show (fromIntegral roughnessVSize) ++ "'."
               else getFloatle
   -- emission
   emissionKSize <- getWord32le
@@ -99,16 +138,16 @@ parseMATE = do
                  then fail $ "Expected dict key 'emission' but found '" ++ name ++ "'."
                  else return ()
   emissionVSize <- getWord32le
-  emission <- if emissionVSize /= sizeOf (undefined :: Float)
+  emission <- if fromIntegral emissionVSize /= sizeOf (undefined :: Float)
                then fail $ "Expected 'emissionVSize == " ++ show (sizeOf (undefined :: Float)) ++
-                   "' but found '" ++ show emissionVSize ++ "'."
+                   "' but found '" ++ show (fromIntegral emissionVSize) ++ "'."
               else getFloatle
   -- final key size of a dict should be '0' to signal end of dict
   zero <- getWord32le
   if zero /= 0
     then fail $ "Expected dict to end with 'keySize == 0' but found key size '"
          ++ show zero ++ "'."
-    else return Material {..}
+    else return $ GMaterial $ Material {..}
 
 
 
