@@ -8,11 +8,9 @@ import Gox.Type
 -- base
 import System.IO (withBinaryFile, IOMode(..))
 import Data.Word
-import Data.Int
 import Data.Char (ord)
-import Control.Monad (replicateM, when)
+import Control.Monad (when)
 import Foreign.Storable (sizeOf)
-import Debug.Trace (trace)
 
 -- binary
 import Data.Binary.Put
@@ -22,16 +20,11 @@ import qualified Data.ByteString.Lazy as BL
 
 -- vector
 import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as U
-
--- containers
-import Data.Map.Strict as M
 
 -- linear
-import Linear hiding (trace)
+import Linear 
 
 -- JuicyPixels
-import Codec.Picture.Types
 import Codec.Picture.Png
 
 writeGoxFile :: FilePath -> GoxFile -> IO ()
@@ -117,9 +110,9 @@ putGoxLayer LAYR {..} = do
                       Just path -> 4 + 8 + 4 + (fromIntegral $ length path)
       boxSize = case mBox of
                   Nothing -> 0
-                  Just box -> 4 + 3 + 4 + (fromIntegral $ 16 * sizeOf (undefined :: Float))
+                  Just _ -> 4 + 3 + 4 + (fromIntegral $ 16 * sizeOf (undefined :: Float))
       shapeAndColorSize = case (mShape, mColor) of
-                            (Just shape, Just color) -> 4 + 5 + 4 + (fromIntegral $ length shape)
+                            (Just shape, Just _) -> 4 + 5 + 4 + (fromIntegral $ length shape)
                                                         + 4 + 5 + 4 + 4
                             _ -> 0
   putWord32le $

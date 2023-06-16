@@ -17,7 +17,6 @@ import Data.Binary.Get
 
 -- JuicyPixels
 import Codec.Picture.Types
-import Codec.Picture.Png
 
 type ChunkSize = Word32
 

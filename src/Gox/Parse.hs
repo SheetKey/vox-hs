@@ -13,7 +13,6 @@ import Data.Int
 import Data.Char (chr)
 import Control.Monad (replicateM)
 import Foreign.Storable (sizeOf)
-import Debug.Trace (trace)
 
 -- binary
 import Data.Binary.Get
@@ -23,13 +22,9 @@ import qualified Data.ByteString.Lazy as BL
 
 -- vector
 import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as U
-
--- containers
-import Data.Map.Strict as M
 
 -- linear
-import Linear hiding (trace)
+import Linear 
 
 -- JuicyPixels
 import Codec.Picture.Types
@@ -43,14 +38,14 @@ withGoxFile filePath action = withBinaryFile filePath ReadMode $ \h -> do
 parseGoxFileStream :: BL.ByteString -> Either ParseError GoxFile
 parseGoxFileStream input =
   case runGetOrFail getGoxFile input of
-    Left (_, offset, error) -> Left (offset, error)
+    Left (_, offset, err) -> Left (offset, err)
     Right (_, _, result) -> Right result
 
 getGoxFile :: Get GoxFile
 getGoxFile = do
-  id <- getIdentifier
-  if id /= "GOX "
-    then fail $ "GOX file not allowed to start with '" ++ id ++ "'. Must start with 'GOX '."
+  identifier <- getIdentifier
+  if identifier /= "GOX "
+    then fail $ "GOX file not allowed to start with '" ++ identifier ++ "'. Must start with 'GOX '."
     else do
     version <- getInt32le
     if version /= 2
@@ -69,9 +64,9 @@ parseChunks = do
 
 parseChunk :: Get GoxChunk
 parseChunk = do
-  id <- getIdentifier
+  identifier <- getIdentifier
   size <- getWord32le
-  chunk <- case id of
+  chunk <- case identifier of
              "BL16" -> parseBL16 size
              "LAYR" -> parseLAYR
              "MATE" -> parseMATE
