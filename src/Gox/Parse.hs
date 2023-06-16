@@ -87,7 +87,7 @@ parseBlocks i acc = do
   blockY     <- getInt32le
   blockZ     <- getInt32le
   _ <- getInt32le -- should be 0
-  parseBlocks (i-1) $ acc `V.snoc` LAYRBlockData {..}
+  parseBlocks (i-1) $ LAYRBlockData {..} `V.cons` acc
 
 
 parseLAYR :: Get GoxChunk

@@ -83,8 +83,8 @@ fromChunk Skipped = GoxFile V.empty V.empty V.empty
 fromChunk None = GoxFile V.empty V.empty V.empty
 
 addChunk :: GoxChunk -> GoxFile -> GoxFile
-addChunk (GBL16 c) GoxFile {..} = GoxFile { blocks = blocks `V.snoc` c, .. }
-addChunk (GLAYR c) GoxFile {..} = GoxFile { layers = layers `V.snoc` c, .. }
-addChunk (GMaterial c) GoxFile {..} = GoxFile { materials = materials `V.snoc` c, .. }
+addChunk (GBL16 c) GoxFile {..} = GoxFile { blocks = c `V.cons` blocks, .. }
+addChunk (GLAYR c) GoxFile {..} = GoxFile { layers = c `V.cons` layers, .. }
+addChunk (GMaterial c) GoxFile {..} = GoxFile { materials = c `V.cons` materials, .. }
 addChunk Skipped goxFile = goxFile
 addChunk None goxFile = goxFile
