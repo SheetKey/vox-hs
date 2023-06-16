@@ -12,6 +12,7 @@ import Data.Int
 import Data.Char (chr)
 import Control.Monad (replicateM)
 import Foreign.Storable (sizeOf)
+import Debug.Trace (trace)
 
 -- binary
 import Data.Binary.Get
@@ -27,7 +28,7 @@ import qualified Data.Vector.Unboxed as U
 import Data.Map.Strict as M
 
 -- linear
-import Linear
+import Linear hiding (trace)
 
 withGoxFile :: FilePath -> (Either ParseError GoxFile -> IO ()) -> IO ()
 withGoxFile filePath action = withBinaryFile filePath ReadMode $ \h -> do
@@ -54,11 +55,11 @@ getGoxFile = do
 
 parseChunks :: Get GoxFile
 parseChunks = do
-  chunk <- parseChunk
   dontContinue <- isEmpty
   if dontContinue
-    then return $ fromChunk chunk
-    else do following <- parseChunks
+    then return $ fromChunk None
+    else do chunk <- parseChunk
+            following <- parseChunks
             return $ addChunk chunk following
 
 parseChunk :: Get GoxChunk
@@ -146,13 +147,14 @@ parseMATE = do
                       b <- getFloatle
                       c <- getFloatle
                       return $ V3 a b c
-  -- final key size of a dict should be '0' to signal end of dict
-  zero <- getWord32le
-  if zero /= 0
-    then fail $ "Expected dict to end with 'keySize == 0' but found key size '"
-         ++ show zero ++ "'."
-    else return $ GMaterial $ Material {..}
-
+  -- This is in the specs but not the implementation.
+  -- -- final key size of a dict should be '0' to signal end of dict
+  -- zero <- getWord32le
+  -- if zero /= 0
+  --   then fail $ "Expected dict to end with 'keySize == 0' but found key size '"
+  --        ++ show zero ++ "'."
+  --   else return $ GMaterial $ Material {..}
+  return $ GMaterial $ Material {..}
 
 
 
