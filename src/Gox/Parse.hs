@@ -283,75 +283,30 @@ parseBL16 size = do
 parseMATE :: Get GoxChunk
 parseMATE = do
   -- name
-  nameKSize <- getWord32le
-  _ <- if nameKSize /= 4
-       then fail $ "Expected 'nameKSize == 4' but got '" ++ show nameKSize ++ "'."
-       else do name <- getNChars 4
-               if name /= "name"
-                 then fail $ "Expected dict key 'name' but found '" ++ name ++ "'."
-                 else return ()
+  _ <- parseDictKey 4 "name"
   nameVSize <- getWord32le
   materialName <- getNChars (fromIntegral nameVSize)
   -- baseColor
-  baseColorKSize <- getWord32le
-  _ <- if baseColorKSize /= 5
-       then fail $ "Expected 'baseColorKSize == 5' but got '" ++ show baseColorKSize ++ "'."
-       else do name <- getNChars 5
-               if name /= "color"
-                 then fail $ "Expected dict key 'color' but found '" ++ name ++ "'."
-                 else return ()
-  baseColorVSize <- getWord32le
-  baseColor <- if fromIntegral baseColorVSize /= (4 * sizeOf (undefined :: Float))
-    then fail $ "Expected 'baseColorVSize == " ++ show (4 * (sizeOf (undefined :: Float)))
-         ++ "' but found '" ++ show (fromIntegral baseColorVSize) ++ "'."
-    else do r <- getFloatle
-            g <- getFloatle
-            b <- getFloatle
-            a <- getFloatle
-            return $ V4 r g b a
+  _ <- parseDictKey 5 "color"
+  baseColor <- parseDictValue "color" (fromIntegral $ 4 * sizeOf (undefined :: Float)) $ do
+    r <- getFloatle
+    g <- getFloatle
+    b <- getFloatle
+    a <- getFloatle
+    return $ V4 r g b a
   -- metallic
-  metallicKSize <- getWord32le
-  _ <- if metallicKSize /= 8
-       then fail $ "Expected 'metallicKSize == 8' but found '" ++ show metallicKSize ++ "'."
-       else do name <- getNChars 8
-               if name /= "metallic"
-                 then fail $ "Expected dict key 'metallic' but found '" ++ name ++ "'."
-                 else return ()
-  metallicVSize <- getWord32le
-  metallic <- if fromIntegral metallicVSize /= sizeOf (undefined :: Float)
-              then fail $ "Expected 'metallicVSize == " ++ show (sizeOf (undefined :: Float)) ++
-                   "' but found '" ++ show (fromIntegral metallicVSize) ++ "'."
-              else getFloatle
+  _ <- parseDictKey 8 "metallic"
+  metallic <- parseDictValue "metallic" (fromIntegral $ sizeOf (undefined :: Float)) getFloatle
   -- roughness
-  roughnessKSize <- getWord32le
-  _ <- if roughnessKSize /= 9
-       then fail $ "Expected 'roughnessKSize == 9' but found '" ++ show roughnessKSize ++ "'."
-       else do name <- getNChars 9
-               if name /= "roughness"
-                 then fail $ "Expected dict key 'roughness' but found '" ++ name ++ "'."
-                 else return ()
-  roughnessVSize <- getWord32le
-  roughness <- if fromIntegral roughnessVSize /= sizeOf (undefined :: Float)
-               then fail $ "Expected 'roughnessVSize == " ++ show (sizeOf (undefined :: Float)) ++
-                   "' but found '" ++ show (fromIntegral roughnessVSize) ++ "'."
-              else getFloatle
+  _ <- parseDictKey 9 "roughness"
+  roughness <- parseDictValue "roughness" (fromIntegral $ sizeOf (undefined :: Float)) getFloatle
   -- emission
-  emissionKSize <- getWord32le
-  _ <- if emissionKSize /= 8
-       then fail $ "Expected 'emissionKSize == 8' but found '" ++ show emissionKSize ++ "'."
-       else do name <- getNChars 8
-               if name /= "emission"
-                 then fail $ "Expected dict key 'emission' but found '" ++ name ++ "'."
-                 else return ()
-  emissionVSize <- getWord32le
-  emission <- if fromIntegral emissionVSize /= (3 * sizeOf (undefined :: Float))
-               then fail $ "Expected 'emissionVSize == "
-                    ++ show (3 * sizeOf (undefined :: Float)) ++
-                    "' but found '" ++ show (fromIntegral emissionVSize) ++ "'."
-              else do a <- getFloatle
-                      b <- getFloatle
-                      c <- getFloatle
-                      return $ V3 a b c
+  _ <- parseDictKey 8 "emission"
+  emission <- parseDictValue "emission" (fromIntegral $ 3 * sizeOf (undefined :: Float)) $ do
+    a <- getFloatle
+    b <- getFloatle
+    c <- getFloatle
+    return $ V3 a b c
   -- This is in the specs but not the implementation.
   -- -- final key size of a dict should be '0' to signal end of dict
   -- zero <- getWord32le
