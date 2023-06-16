@@ -35,9 +35,9 @@ drawSphereFromCenter r = drawShape ( sphereFromCenter r )
 
 drawShape
   :: (Int8 -> Int8 -> Int8 -> Int8 -> (Size, XYZI))
-  -> Int8 -- ^ min x coord
-  -> Int8 -- ^ min y coord
-  -> Int8 -- ^ min z coord
+  -> Int8 -- ^ x coord
+  -> Int8 -- ^ y coord
+  -> Int8 -- ^ z coord
   -> Int8 -- ^ color index
   -> VoxFile
   -> VoxFile
@@ -78,7 +78,10 @@ sphereFromCenter r cx cy cz colorIdx =
                                | x <- [(-r)..r]
                                , y <- [(-r)..r]
                                , z <- [(-r)..r]
-                               , (x*x) + (y*y) + (z*z) <= (r*r) ]
+                               , ( ((fromIntegral x :: Int) * fromIntegral x)
+                                   + (fromIntegral y * fromIntegral y)
+                                   + (fromIntegral z * fromIntegral z))
+                                 <= (fromIntegral r * fromIntegral r) ]
            numVoxels = fromIntegral $ U.length voxels
            size = fromIntegral $ (2 * r) + 1
        in ( Size size size size
