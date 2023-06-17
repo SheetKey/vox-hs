@@ -7,9 +7,14 @@ import Gox.Type
 
 -- base
 import Data.Int
+import Data.Word
 
 -- vector
 import qualified Data.Vector as V
+import qualified Data.Vector.Storable as VS
+
+-- JuicyPixels
+import Codec.Picture.Types
 
 -- linear
 import Linear
@@ -64,6 +69,21 @@ emptyGoxFile = GoxFile
   , materials = V.empty
   }
 
+emptyGoxFileMaterial :: GoxFile
+emptyGoxFileMaterial = GoxFile
+  { blocks = V.empty
+  , layers = V.empty
+  , materials = V.singleton defaultMaterial
+  }
+  where
+    defaultMaterial = Material
+      { materialName = "Material.1"
+      , baseColor    = V4 1 1 1 1
+      , metallic     = 0.2
+      , roughness    = 0.5
+      , emission     = V3 0 0 0
+      }
+
 addMaterial
   :: Maybe String -- ^ optionally provide a name
   -> V4 Float     -- ^ base color
@@ -100,3 +120,44 @@ shiftLAYRBlock x y z LAYRBlockData {..} = LAYRBlockData
   , blockZ = blockZ + z
   , ..
   }
+
+newLAYR :: V.Vector LAYRBlockData -> Int -> LAYR
+newLAYR blockData l = LAYR 
+  { layrName = "Layer." ++ show l
+  , mat = identity
+  , layrId = fromIntegral l
+  , baseId = 0
+  , materialIdx = 0
+  , mImgPath = Nothing
+  , mBox = Nothing
+  , mShape = Nothing
+  , mColor = Nothing
+  , visible = 1
+  , ..
+  }
+
+preBL16ToBL16 :: PreBL16 -> BL16
+preBL16ToBL16 PreBL16 {..} = BL16 $ preBlocksToPng preBlocks
+
+preBlocksToPng :: VS.Vector Word8 -> Image PixelRGBA8
+preBlocksToPng = Image 64 64 
+
+newLAYRBlockData :: Int -> V.Vector PreBL16 -> V.Vector LAYRBlockData
+newLAYRBlockData nextFreeBLIdx preBlocks = V.generate (V.length preBlocks) $ \i ->
+  let V3 x y z = fmap fromIntegral $ offset $ preBlocks V.! i
+  in  LAYRBlockData { blockIndex = fromIntegral $ nextFreeBLIdx + i
+                    , blockX = x
+                    , blockY = y
+                    , blockZ = z
+                    }
+  
+addLAYRfromBlocks :: V.Vector PreBL16 -> GoxFile -> GoxFile
+addLAYRfromBlocks bl16s GoxFile {..} =
+  let nextFreeBLIdx = V.length blocks
+      layr = newLAYR (newLAYRBlockData nextFreeBLIdx bl16s) (V.length layers + 1)
+      newBlocks = preBL16ToBL16 <$> bl16s
+  in GoxFile { blocks = blocks V.++ newBlocks
+             , layers = layers `V.snoc` layr
+             , ..
+             }
+      

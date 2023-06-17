@@ -13,47 +13,13 @@ import Data.Tuple (swap)
 
 -- vector
 import qualified Data.Vector as V
+import qualified Data.Vector.Storable as VS
 
 -- linear
 import Linear
 
-drawCubeFromBottomLeft
-  :: Int32 -- ^ 'w' is in the x direction as in goxel editor
-  -> Int32 -- ^ 'h' is in the y direction as in goxel editor
-  -> Int32 -- ^ 'd' is in the z direction as in goxel editor
-  -> V3 Int32 -- ^ coordinate of the bottom left point of the cube
-  -> Int32 -- ^ material index
-  -> Maybe String -- ^ maybe the name of the layer
-  -> GoxFile
-  -> GoxFile
-drawCubeFromBottomLeft w h d pnt = undefined
---  case (w > 0, h > 0, d >0) of
---    (True, True, True) ->
-
-drawCubeFromBottomLeftLAYR
-  :: Int32 -- ^ 'w' is in the x direction as in goxel editor
-  -> Int32 -- ^ 'h' is in the y direction as in goxel editor
-  -> Int32 -- ^ 'd' is in the z direction as in goxel editor
-  -> V3 Int32 -- ^ coordinate of the bottom left point of the cube
-  -> Int32 -- ^ next free block index
-  -> String -- ^ layrName
-  -> Int32 -- ^ layrId
-  -> Int32 -- ^ materialIdx
-  -> (LAYR, V.Vector BL16)
-drawCubeFromBottomLeftLAYR w h d (V3 x y z) layrName layrId materialIdx = undefined
---  ( LAYR
---    { mat = identity
---    , baseId = 0
---    , mImgPath = Nothing
---    , mBox = Nothing
---    , mShape = Nothing
---    , mColor = Nothing
---    , visible = 1
---    , blockData = undefined
---    , ..
---    }
---  ,
---    )
+drawShape :: Shape a => a -> GoxFile -> GoxFile
+drawShape = addLAYRfromBlocks . fullBL16
 
 data AABB = AABB
   { lx :: Int
@@ -64,15 +30,23 @@ data AABB = AABB
   , uz :: Int
   }
 
-data PreBL16 = PreBL16
-  { offset    :: V3 Int
-  , preBlocks :: V.Vector Word8
-  }
-
 class Shape a where
   getaabb :: a -> AABB
   containsPoint :: a -> V3 Int -> Bool
-  containedBy :: a -> [PreBL16]
+  emptyBL16 :: a -> V.Vector PreBL16
+  fullBL16 :: a -> V.Vector PreBL16
+
+  fullBL16 a =
+    let preBL16s = emptyBL16 a
+    in flip fmap preBL16s $
+       \(PreBL16 { offset = offset }) ->
+         PreBL16
+         { offset = offset
+         , preBlocks = VS.generate 16384 $ \i ->
+             if a `containsPoint` (offset + unsafeVecIdxToVox i)
+             then 255
+             else 0
+         }
 
 newtype Cube = Cube AABB
 
@@ -85,7 +59,7 @@ instance Shape Cube where
     && y <= uy
     && z >= lz
     && z <= uz
-  containedBy (Cube AABB {..}) =
+  emptyBL16 (Cube AABB {..}) =
     let dx = ux - lx
         dy = uy - ly
         dz = uz - lz
@@ -98,16 +72,24 @@ instance Shape Cube where
         numZ = case dz `divMod` 16 of
                  (d, 0) -> d
                  (d, r) -> d+1
-    in [ PreBL16 (V3 (lx + x) (ly + y) (lz + z)) V.empty
-       | x <- [0..(numX - 1)]
-       , y <- [0..(numY - 1)]
-       , z <- [0..(numZ - 1)] ]
+    in V.fromList [ PreBL16 (V3 (lx + (x * 16)) (ly + (y * 16)) (lz + (z * 16))) VS.empty
+                  | x <- [0..(numX - 1)]
+                  , y <- [0..(numY - 1)]
+                  , z <- [0..(numZ - 1)] ]
 
-fillBL16 :: Shape a => a -> [PreBL16]
-fillBL16 a = undefined
+unsafeVecIdxToVox :: Int -> V3 Int
+unsafeVecIdxToVox = unsafePngToVox . unsafeVecIdxToPngCoord
 
 vecIdxToVox :: Int -> V3 Int
 vecIdxToVox = pngToVox . vecIdxToPngCoord
+
+unsafeVecIdxToPngCoord :: Int -> (Int, Int)
+unsafeVecIdxToPngCoord i =
+  let r = i `mod` 4
+      idx = i - r
+      unscaledIdx = idx `div` 4
+      (y, x) = unscaledIdx `divMod` 64
+  in (x, y)
 
 vecIdxToPngCoord :: Int -> (Int, Int)
 vecIdxToPngCoord i =
@@ -126,6 +108,13 @@ vecIdxToPngCoord i =
                          then error $ "Expected '0 <= r && r < 64' but got 'r == " ++ show r ++ "'."
                          else (r, y)
     in (x, y)
+
+unsafePngToVox :: (Int, Int) -> V3 Int
+unsafePngToVox (r, d) =
+  let p = d * 64 + r
+      (z, xy) = p `divMod` 256
+      (y, x) = xy `divMod` 16
+  in V3 x y z
 
 pngToVox :: (Int, Int) -> V3 Int
 pngToVox (r, d) =

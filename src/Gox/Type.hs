@@ -8,6 +8,7 @@ import Data.Int
 
 -- vector
 import qualified Data.Vector as V
+import qualified Data.Vector.Storable as VS
 
 -- linear
 import Linear
@@ -39,6 +40,12 @@ data BL16 = BL16
   }
 instance Show BL16 where
   show _ = "BL16"
+
+data PreBL16 = PreBL16
+  { offset    :: V3 Int
+  , preBlocks :: VS.Vector Word8
+  }
+  deriving (Show)
 
 data LAYR = LAYR
   { layrName    :: String
