@@ -27,6 +27,7 @@ class Shape a where
   containsPoint :: a -> V3 Int -> Bool
   emptyBL16 :: a -> V.Vector PreBL16
   fullBL16 :: a -> V.Vector PreBL16
+  drawShape :: a -> GoxFile -> GoxFile
 
   emptyBL16 a =
     let AABB {..} = getaabb a
@@ -59,6 +60,8 @@ class Shape a where
              else 0
          }
 
+  drawShape = addLAYRfromBlocks . fullBL16
+
 newtype Cube = Cube AABB
 
 instance Shape Cube where
@@ -71,5 +74,24 @@ instance Shape Cube where
     && z >= lz
     && z <= uz
 
-drawShape :: Shape a => a -> GoxFile -> GoxFile
-drawShape = addLAYRfromBlocks . fullBL16
+data Sphere = Sphere
+  { sphereX :: Int
+  , sphereY :: Int
+  , sphereZ :: Int
+  , sphereR :: Int
+  }
+  
+instance Shape Sphere where
+  getaabb Sphere {..} =
+    let lx = sphereX - sphereR
+        ly = sphereY - sphereR
+        lz = sphereZ - sphereR
+        ux = sphereX + sphereR
+        uy = sphereY + sphereR
+        uz = sphereZ + sphereR
+    in AABB {..}
+  containsPoint Sphere {..} (V3 x y z) =
+    let dx = x - sphereX 
+        dy = y - sphereY 
+        dz = z - sphereZ 
+    in (dx * dx) + (dy * dy) + (dz * dz) <= sphereR * sphereR
