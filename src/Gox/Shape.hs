@@ -303,10 +303,11 @@ closest p = V.foldl f (2 ^ 50, (V3 0 0 0, 0))
          then (dist, bp)
          else best
 
-pointInRangeLUT :: Bezier a => Int -> V.Vector BezierPoint -> a -> Int -> V3 Int -> Bool
-pointInRangeLUT s lut bezier r point =
+pointInRangeLUT
+  :: Bezier a => Int -> V.Vector BezierPoint -> a -> (Double -> Double) -> V3 Int -> Bool
+pointInRangeLUT s lut bezier fTtoR point =
   let (lutDist, (_, lutT)) = closest point lut
-  in if lutDist <= radius
+  in if lutDist <= fTtoR lutT
      then True
      else case lutT of
             0 -> f 0 11
@@ -314,7 +315,6 @@ pointInRangeLUT s lut bezier r point =
             t -> f (t - (1 / steps)) 21
   where 
     steps = fromIntegral s
-    radius = fromIntegral r
     step = 0.1 / steps
     pointDouble = fromIntegral <$> point
     f t1 num = let tValues = V.enumFromStepN t1 step num
@@ -324,10 +324,10 @@ pointInRangeLUT s lut bezier r point =
                            (\t -> distance (fst $ compute bezier t) pointDouble) <$> tValues
                    bestT = tValues V.! bestIdx
                    (bestPnt, _) = compute bezier bestT
-               in distance pointDouble bestPnt <= radius
+               in distance pointDouble bestPnt <= fTtoR bestT
 
-pointInRange :: Bezier a => a -> Int -> V3 Int -> Bool
-pointInRange bezier = pointInRangeLUT 100 (getLUT 100 bezier) bezier
+pointInRange :: Bezier a => a -> (Double -> Double) -> V3 Int -> Bool
+pointInRange bezier = pointInRangeLUT 100 (getLUT 100 bezier) bezier 
 
 data BezierCurve a = BezierCurve
   { bezierCurve :: a
@@ -336,11 +336,35 @@ data BezierCurve a = BezierCurve
 
 instance Bezier a => Shape (BezierCurve a) where
   getaabb BezierCurve {..} = aabbEnlargeBy (bezieraabb bezierCurve) bezierRadius
-  containsPoint BezierCurve {..} = pointInRange bezierCurve bezierRadius
+  containsPoint BezierCurve {..} = pointInRange bezierCurve (\_ -> fromIntegral bezierRadius)
   fullBL16 a =
     let preBL16s = emptyBL16 a
         lut = getLUT 100 $ bezierCurve a
-        aContainsPoint = pointInRangeLUT 100 lut (bezierCurve a) (bezierRadius a)
+        aContainsPoint =
+          pointInRangeLUT 100 lut (bezierCurve a) (\_ -> fromIntegral $ bezierRadius a)
+    in flip fmap preBL16s $
+       \(PreBL16 { offset = offset }) ->
+         PreBL16
+         { offset = offset
+         , preBlocks = VS.generate 16384 $ \i ->
+             if aContainsPoint (offset + unsafeVecIdxToVox i)
+             then 255
+             else 0
+         }
+
+data TaperedBezierCurve a = TaperedBezierCurve
+  { taperedBezierCurve :: a
+  , taperingFunction :: Double -> Double
+  , taperMaxRadius :: Int
+  }
+
+instance Bezier a => Shape (TaperedBezierCurve a) where
+  getaabb TaperedBezierCurve {..} = aabbEnlargeBy (bezieraabb taperedBezierCurve) taperMaxRadius
+  containsPoint TaperedBezierCurve {..} = pointInRange taperedBezierCurve taperingFunction
+  fullBL16 a =
+    let preBL16s = emptyBL16 a
+        lut = getLUT 100 $ taperedBezierCurve a
+        aContainsPoint = pointInRangeLUT 100 lut (taperedBezierCurve a) (taperingFunction a)
     in flip fmap preBL16s $
        \(PreBL16 { offset = offset }) ->
          PreBL16
