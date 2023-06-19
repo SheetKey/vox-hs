@@ -27,6 +27,7 @@ data AABB = AABB
   , uy :: Int
   , uz :: Int
   }
+  deriving (Show)
 
 class Shape a where
   getaabb :: a -> AABB
@@ -43,7 +44,7 @@ class Shape a where
         numX = case dx `divMod` 16 of
                  (d, 0) -> d
                  (d, r) -> d+1
-        numY = case dx `divMod` 16 of
+        numY = case dy `divMod` 16 of
                  (d, 0) -> d
                  (d, r) -> d+1
         numZ = case dz `divMod` 16 of
@@ -113,12 +114,13 @@ class Bezier a where
         xs = ((^._x) . fst) <$> xPoints
         ys = ((^._y) . fst) <$> yPoints
         zs = ((^._z) . fst) <$> zPoints
-    in AABB { lx = floor $ minimum xs
-            , ly = floor $ minimum ys
-            , lz = floor $ minimum zs
-            , ux = ceiling $ maximum xs
-            , uy = ceiling $ maximum ys
-            , uz = ceiling $ maximum zs
+        r = getRadius bezier
+    in AABB { lx = floor $ minimum xs - r 
+            , ly = floor $ minimum ys - r
+            , lz = floor $ minimum zs - r
+            , ux = ceiling $ maximum xs + r
+            , uy = ceiling $ maximum ys + r
+            , uz = ceiling $ maximum zs + r
             }
 
 type BezierPoint = (V3 Double, Double)
@@ -146,12 +148,12 @@ instance Bezier LinearBezier where
                   z = (mt * fromIntegral lz0) + (t * fromIntegral lz1)
               in (V3 x y z, t)
   bezieraabb LinearBezier {..} = AABB
-    { lx = lx0 - 2 * lbR
-    , ly = ly0 - 2 * lbR
-    , lz = lz0 - 2 * lbR
-    , ux = lx1 + 2 * lbR
-    , uy = ly1 + 2 * lbR
-    , uz = lz1 + 2 * lbR
+    { lx = lx0 - lbR
+    , ly = ly0 - lbR
+    , lz = lz0 - lbR
+    , ux = lx1 + lbR
+    , uy = ly1 + lbR
+    , uz = lz1 + lbR
     }
   extrema _ = V3 [0, 1] [0, 1] [0, 1]
 
@@ -215,7 +217,7 @@ quadraticBezierRoots :: QuadraticBezier -> V3 [Double]
 quadraticBezierRoots QuadraticBezier {..} =
   let t a b c = let d = a - (2 * b) + c
                 in if d /= 0
-                   then let m1 = - (sqrt $ (b * a) - (a * c))
+                   then let m1 = - (sqrt $ (b * b) - (a * c))
                             m2 = - a + b
                             v1 = - (m1 + m2) / d
                             v2 = - (-m1 + m2) / d
@@ -274,15 +276,15 @@ instance Bezier CubicBezier where
 
 cubicBezierDeriv :: CubicBezier -> QuadraticBezier
 cubicBezierDeriv CubicBezier {..} =
-  let qx0 = 2 * (cx1 - cx0)
-      qy0 = 2 * (cy1 - cy0)
-      qz0 = 2 * (cz1 - cz0)
-      qx1 = 2 * (cx2 - cx1)
-      qy1 = 2 * (cy2 - cy1)
-      qz1 = 2 * (cz2 - cz1)
-      qx2 = 2 * (cx3 - cx2)
-      qy2 = 2 * (cy3 - cy2)
-      qz2 = 2 * (cz3 - cz2)
+  let qx0 = 3 * (cx1 - cx0)
+      qy0 = 3 * (cy1 - cy0)
+      qz0 = 3 * (cz1 - cz0)
+      qx1 = 3 * (cx2 - cx1)
+      qy1 = 3 * (cy2 - cy1)
+      qz1 = 3 * (cz2 - cz1)
+      qx2 = 3 * (cx3 - cx2)
+      qy2 = 3 * (cy3 - cy2)
+      qz2 = 3 * (cz3 - cz2)
       lbR = cbR
   in QuadraticBezier {..}
 
@@ -294,8 +296,8 @@ getLUT steps bezier = V.generate (steps + 1) $ \i ->
 closest :: V3 Int -> V.Vector BezierPoint -> (Double, BezierPoint)
 closest p = V.foldl f (2 ^ 50, (V3 0 0 0, 0))
   where
-    f best@(bestDist, (bestPoint, _)) bp@(point, _) =
-      let dist = distance bestPoint point
+    f best@(bestDist, _) bp@(point, _) =
+      let dist = distance (fromIntegral <$> p) point
       in if dist < bestDist
          then (dist, bp)
          else best
@@ -303,13 +305,13 @@ closest p = V.foldl f (2 ^ 50, (V3 0 0 0, 0))
 pointInRange :: Bezier a => V3 Int -> a -> Bool
 pointInRange point bezier =
   let lut = getLUT 100 bezier
-      (lutDist, lutPoin) = closest point lut
+      (lutDist, (_, lutT)) = closest point lut
   in if lutDist <= radius
      then True
-     else case lutDist of
-            0 -> f 0 10
-            1 -> f (1 - (1 / 100)) 10
-            t -> f (t - (1 / 100)) 20
+     else case lutT of
+            0 -> f 0 11
+            1 -> f (1 - (1 / 100)) 11
+            t -> f (t - (1 / 100)) 21
   where 
     step = 0.1 / 100
     radius = getRadius bezier
@@ -317,13 +319,14 @@ pointInRange point bezier =
     f t1 num = let tValues = V.enumFromStepN t1 step num
                    -- TODO: use V.minimumOn once vector package updates version in nix repo
                    --  V.minimumOn (\t -> distance (compute bezier t) point) tValues
-                   bestT = V.minimum $
+                   bestIdx = V.minIndex $
                            (\t -> distance (fst $ compute bezier t) pointDouble) <$> tValues
+                   bestT = tValues V.! bestIdx
                    (bestPnt, _) = compute bezier bestT
                in distance pointDouble bestPnt <= radius
 
-newtype BezierShape a = BezierShape a
+newtype BezierCurve a = BezierCurve a
 
-instance Bezier a => Shape (BezierShape a) where
-  getaabb (BezierShape a) = bezieraabb a
-  containsPoint (BezierShape a) = flip pointInRange a
+instance Bezier a => Shape (BezierCurve a) where
+  getaabb (BezierCurve a) = bezieraabb a
+  containsPoint (BezierCurve a) = flip pointInRange a
