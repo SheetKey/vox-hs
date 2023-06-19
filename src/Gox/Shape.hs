@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Gox.Shape where
 
@@ -28,6 +29,16 @@ data AABB = AABB
   , uz :: Int
   }
   deriving (Show)
+
+aabbEnlargeBy :: AABB -> Int -> AABB
+aabbEnlargeBy AABB {..} r = AABB
+  { lx = lx - r
+  , ly = ly - r
+  , lz = lz - r
+  , ux = ux + r
+  , uy = uy + r
+  , uz = uz + r
+  }
 
 class Shape a where
   getaabb :: a -> AABB
@@ -103,27 +114,27 @@ instance Shape Sphere where
         dz = z - sphereZ 
     in (dx * dx) + (dy * dy) + (dz * dz) <= sphereR * sphereR
 
+type BezierPoint = (V3 Double, Double)
+
 class Bezier a where
-  getRadius :: a -> Double
+  type Deriv a
   compute :: a -> Double -> BezierPoint
   bezieraabb :: a -> AABB
   extrema :: a -> V3 [Double]
+  deriv :: a -> Deriv a
 
   bezieraabb bezier =
     let (V3 xPoints yPoints zPoints) = (fmap . fmap) (compute bezier) (extrema bezier)
         xs = ((^._x) . fst) <$> xPoints
         ys = ((^._y) . fst) <$> yPoints
         zs = ((^._z) . fst) <$> zPoints
-        r = getRadius bezier
-    in AABB { lx = floor $ minimum xs - r 
-            , ly = floor $ minimum ys - r
-            , lz = floor $ minimum zs - r
-            , ux = ceiling $ maximum xs + r
-            , uy = ceiling $ maximum ys + r
-            , uz = ceiling $ maximum zs + r
+    in AABB { lx = floor $ minimum xs 
+            , ly = floor $ minimum ys
+            , lz = floor $ minimum zs
+            , ux = ceiling $ maximum xs
+            , uy = ceiling $ maximum ys
+            , uz = ceiling $ maximum zs
             }
-
-type BezierPoint = (V3 Double, Double)
 
 data LinearBezier = LinearBezier
   { lx0 :: Int 
@@ -132,11 +143,10 @@ data LinearBezier = LinearBezier
   , lx1 :: Int
   , ly1 :: Int
   , lz1 :: Int
-  , lbR :: Int
   }
 
 instance Bezier LinearBezier where
-  getRadius = fromIntegral . lbR
+  type Deriv LinearBezier = Double
   compute LinearBezier {..} tVal = case tVal of
     0 -> (fromIntegral <$> (V3 lx0 ly0 lz0), 0)
     1 -> (fromIntegral <$> (V3 lx1 ly1 lz1), 1)
@@ -147,15 +157,16 @@ instance Bezier LinearBezier where
                   y = (mt * fromIntegral ly0) + (t * fromIntegral ly1)
                   z = (mt * fromIntegral lz0) + (t * fromIntegral lz1)
               in (V3 x y z, t)
-  bezieraabb LinearBezier {..} = AABB
-    { lx = lx0 - lbR
-    , ly = ly0 - lbR
-    , lz = lz0 - lbR
-    , ux = lx1 + lbR
-    , uy = ly1 + lbR
-    , uz = lz1 + lbR
-    }
+  --bezieraabb LinearBezier {..} = AABB
+  --  { lx = lx0 
+  --  , ly = ly0 
+  --  , lz = lz0 
+  --  , ux = lx1 
+  --  , uy = ly1 
+  --  , uz = lz1 
+  --  }
   extrema _ = V3 [0, 1] [0, 1] [0, 1]
+  deriv _ = 0
 
 linearBezierRoots :: LinearBezier -> V3 [Double]
 linearBezierRoots LinearBezier {..} =
@@ -175,11 +186,10 @@ data QuadraticBezier = QuadraticBezier
   , qx2 :: Int
   , qy2 :: Int
   , qz2 :: Int
-  , qbR :: Int
   }
 
 instance Bezier QuadraticBezier where
-  getRadius = fromIntegral . qbR
+  type Deriv QuadraticBezier = LinearBezier
   compute QuadraticBezier {..} tVal = case tVal of
     0 -> (fromIntegral <$> (V3 qx0 qy0 qz0), 0)
     1 -> (fromIntegral <$> (V3 qx2 qy2 qz2), 1)
@@ -196,22 +206,17 @@ instance Bezier QuadraticBezier where
                   z = (a * fromIntegral qz0) + (b * fromIntegral qz1) + (c * fromIntegral qz2)
               in (V3 x y z, t)
   extrema bezier =
-    let deriv = quadraticBezierDeriv bezier
-        dRoots = filter (\t -> 0 < t && t < 1) <$> linearBezierRoots deriv
+    let linDeriv = deriv bezier
+        dRoots = filter (\t -> 0 < t && t < 1) <$> linearBezierRoots linDeriv
     in (++ [0, 1]) <$> dRoots
-        
-
--- the derivative of a quadratic bezier is a linear bezier
-quadraticBezierDeriv :: QuadraticBezier -> LinearBezier
-quadraticBezierDeriv QuadraticBezier {..} =
-  let lx0 = 2 * (qx1 - qx0)
-      ly0 = 2 * (qy1 - qy0)
-      lz0 = 2 * (qz1 - qz0)
-      lx1 = 2 * (qx2 - qx1)
-      ly1 = 2 * (qy2 - qy1)
-      lz1 = 2 * (qz2 - qz1)
-      lbR = qbR
-  in LinearBezier {..}
+  deriv QuadraticBezier {..} = 
+    let lx0 = 2 * (qx1 - qx0)
+        ly0 = 2 * (qy1 - qy0)
+        lz0 = 2 * (qz1 - qz0)
+        lx1 = 2 * (qx2 - qx1)
+        ly1 = 2 * (qy2 - qy1)
+        lz1 = 2 * (qz2 - qz1)
+    in LinearBezier {..}
 
 quadraticBezierRoots :: QuadraticBezier -> V3 [Double]
 quadraticBezierRoots QuadraticBezier {..} =
@@ -243,11 +248,10 @@ data CubicBezier = CubicBezier
   , cx3 :: Int
   , cy3 :: Int
   , cz3 :: Int
-  , cbR :: Int
   }
 
 instance Bezier CubicBezier where
-  getRadius = fromIntegral . cbR
+  type Deriv CubicBezier = QuadraticBezier
   compute CubicBezier {..} tVal = case tVal of
     0 -> (fromIntegral <$> (V3 cx0 cy0 cz0), 0)
     1 -> (fromIntegral <$> (V3 cx3 cy3 cz3), 1)
@@ -268,25 +272,22 @@ instance Bezier CubicBezier where
                     + (c * fromIntegral cz2) + (d * fromIntegral cz3)
               in (V3 x y z, t)
   extrema bezier =
-    let deriv = cubicBezierDeriv bezier
-        dderiv = quadraticBezierDeriv deriv
-        dRoots = filter (\t -> 0 < t && t < 1) <$> quadraticBezierRoots deriv
-        ddRoots = filter (\t -> 0 < t && t < 1) <$> linearBezierRoots dderiv
+    let quadDeriv = deriv bezier
+        linDeriv = deriv quadDeriv
+        dRoots = filter (\t -> 0 < t && t < 1) <$> quadraticBezierRoots quadDeriv
+        ddRoots = filter (\t -> 0 < t && t < 1) <$> linearBezierRoots linDeriv
     in liftA2 ((++) . (++ [0, 1])) dRoots ddRoots
-
-cubicBezierDeriv :: CubicBezier -> QuadraticBezier
-cubicBezierDeriv CubicBezier {..} =
-  let qx0 = 3 * (cx1 - cx0)
-      qy0 = 3 * (cy1 - cy0)
-      qz0 = 3 * (cz1 - cz0)
-      qx1 = 3 * (cx2 - cx1)
-      qy1 = 3 * (cy2 - cy1)
-      qz1 = 3 * (cz2 - cz1)
-      qx2 = 3 * (cx3 - cx2)
-      qy2 = 3 * (cy3 - cy2)
-      qz2 = 3 * (cz3 - cz2)
-      lbR = cbR
-  in QuadraticBezier {..}
+  deriv CubicBezier {..} = 
+    let qx0 = 3 * (cx1 - cx0)
+        qy0 = 3 * (cy1 - cy0)
+        qz0 = 3 * (cz1 - cz0)
+        qx1 = 3 * (cx2 - cx1)
+        qy1 = 3 * (cy2 - cy1)
+        qz1 = 3 * (cz2 - cz1)
+        qx2 = 3 * (cx3 - cx2)
+        qy2 = 3 * (cy3 - cy2)
+        qz2 = 3 * (cz3 - cz2)
+    in QuadraticBezier {..}
 
 getLUT :: Bezier a => Int -> a -> V.Vector BezierPoint
 getLUT steps bezier = V.generate (steps + 1) $ \i ->
@@ -302,19 +303,19 @@ closest p = V.foldl f (2 ^ 50, (V3 0 0 0, 0))
          then (dist, bp)
          else best
 
-pointInRange :: Bezier a => V3 Int -> a -> Bool
-pointInRange point bezier =
-  let lut = getLUT 100 bezier
-      (lutDist, (_, lutT)) = closest point lut
+pointInRangeLUT :: Bezier a => Int -> V.Vector BezierPoint -> a -> Int -> V3 Int -> Bool
+pointInRangeLUT s lut bezier r point =
+  let (lutDist, (_, lutT)) = closest point lut
   in if lutDist <= radius
      then True
      else case lutT of
             0 -> f 0 11
-            1 -> f (1 - (1 / 100)) 11
-            t -> f (t - (1 / 100)) 21
+            1 -> f (1 - (1 / steps)) 11
+            t -> f (t - (1 / steps)) 21
   where 
-    step = 0.1 / 100
-    radius = getRadius bezier
+    steps = fromIntegral s
+    radius = fromIntegral r
+    step = 0.1 / steps
     pointDouble = fromIntegral <$> point
     f t1 num = let tValues = V.enumFromStepN t1 step num
                    -- TODO: use V.minimumOn once vector package updates version in nix repo
@@ -325,8 +326,27 @@ pointInRange point bezier =
                    (bestPnt, _) = compute bezier bestT
                in distance pointDouble bestPnt <= radius
 
-newtype BezierCurve a = BezierCurve a
+pointInRange :: Bezier a => a -> Int -> V3 Int -> Bool
+pointInRange bezier = pointInRangeLUT 100 (getLUT 100 bezier) bezier
+
+data BezierCurve a = BezierCurve
+  { bezierCurve :: a
+  , bezierRadius :: Int
+  }
 
 instance Bezier a => Shape (BezierCurve a) where
-  getaabb (BezierCurve a) = bezieraabb a
-  containsPoint (BezierCurve a) = flip pointInRange a
+  getaabb BezierCurve {..} = aabbEnlargeBy (bezieraabb bezierCurve) bezierRadius
+  containsPoint BezierCurve {..} = pointInRange bezierCurve bezierRadius
+  fullBL16 a =
+    let preBL16s = emptyBL16 a
+        lut = getLUT 100 $ bezierCurve a
+        aContainsPoint = pointInRangeLUT 100 lut (bezierCurve a) (bezierRadius a)
+    in flip fmap preBL16s $
+       \(PreBL16 { offset = offset }) ->
+         PreBL16
+         { offset = offset
+         , preBlocks = VS.generate 16384 $ \i ->
+             if aContainsPoint (offset + unsafeVecIdxToVox i)
+             then 255
+             else 0
+         }
