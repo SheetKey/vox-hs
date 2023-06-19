@@ -2,7 +2,7 @@
   description = "A Haskell project template.";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
 
     # Example of adding or overriding a package:
@@ -38,6 +38,7 @@
             # gi-gtk-declarative = pkgs.haskell.lib.dontCheck haskellPackages.gi-gtk-declarative;
 
             #example = haskellPackages.callCabal2nix "example" example-input { };
+            vector = haskellPackages.vector_0_13_0_0;
           };
 
         defaultPackage = self.packages.${system}.${packageName};
