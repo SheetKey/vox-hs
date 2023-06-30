@@ -6,17 +6,18 @@ import Gox.Turtle
 validateParameters :: Parameters -> Bool
 
 data BezierPoint = BezierPoint
-  { control :: V3 Double
-  , handleLeft :: V3 Double
-  , handleRight :: V3 Double
+  { bpControl :: V3 Double
+  , bpHandleLeft :: V3 Double
+  , bpHandleRight :: V3 Double
+  , bpRadius :: Double
   }
 
 data Curve = Curve { bezierPoints :: V.Vector BezierPoint }
 
 data Stem = Stem
   { sDepth          :: Int
-  , sCurve          :: Maybe Curve
-  , sParent         :: Maybe Int
+  , sCurve          :: Curve
+  , sParent         :: Int
   , sOffset         :: Double
   , sRadiusLimit    :: Double
   , sChildren       :: [Int]
@@ -50,8 +51,18 @@ data Tree = Tree
   , tStems         :: Vector Stem
   }
 
+data PShape = Spherical
+            | Hemispherical
+            | Cylindrical
+            | TaperedCylindrical
+            | Flame
+            | InverseConical
+            | TendFlame
+            | Envelope
+            | Conical
+
 data Parameters = Parameters
-  { pShape          :: Int       -- 0-8
+  { pShape          :: PShape    -- 0-8
   , pGScale         :: Double    -- >0, scale of the tree
   , pGScaleV        :: Double    -- max variation of 'gScale'
   , pLevels         :: Int       -- > 0, often 3 or 4. Number of levels of branching
@@ -95,139 +106,161 @@ data Parameters = Parameters
   , pPrunePowerHigh :: Double    -- curvature of the upper section of pruning envelope
   }
 
-newtype TreeState g a = TreeState { runTreeState :: Parameters -> g -> Tree -> (a, Tree, g) }
+newtype TreeState g a = TreeState
+  { runTreeState :: Parameters -> g -> Tree -> Stem -> (a, Stem, Tree, g) }
 
 instance Functor (TreeState g) where
-  fmap f m = TreeState $ \ p g t ->
-    let ~(a, t', g') = runTreeState m p g t
-    in (f a, t', g')
+  fmap f m = TreeState $ \ p g t s ->
+    let ~(a, s', t', g') = runTreeState m p g t s
+    in (f a, s', t', g')
   {-# INLINE fmap #-}
 
 instance Applicative (TreeState g) where
-  pure a = TreeState $ \ _ g t -> (a, t, g)
+  pure a = TreeState $ \ _ g t s -> (a, s, t, g)
   {-# INLINE pure #-}
-  TreeState mf <*> TreeState mx = TreeState $ \ p g t ->
-    let ~(f, t', g') = mf p g t
-        ~(x, t'', g'') = mx p g' t'
-    in (f x, t'', g'')
+  TreeState mf <*> TreeState mx = TreeState $ \ p g t s ->
+    let ~(f, s', t', g') = mf p g t s
+        ~(x, s'', t'', g'') = mx p g' t' s'
+    in (f x, s'', t'', g'')
   {-# INLINE (<*>) #-}
 
 instance Monad (TreeState g) where
-  m >>= k = TreeState $ \ p g t ->
-    let ~(a, t', g') = runTreeState m p g t
-        ~(b, t'', g'') <- runTreeState (k a) p g' t'
-    in (b, t'', g'')
+  m >>= k = TreeState $ \ p g t s ->
+    let ~(a, s', t', g') = runTreeState m p g t s
+        ~(b, s'', t'', g'') <- runTreeState (k a) p g' t' s'
+    in (b, s'', t'', g'')
   {-# INLINE (>>=) #-}
 
 instance RandomGen g => MonadRandom (TreeState g) where
-  getRandomR lohi = TreeState $ \ _ g t -> let (a, g') = randomR lohi g in (a, t, g')
-  getRandom = TreeState $ \ _ g t -> let (a, g') = random g in (a, t, g')
-  getRandomRs lohi = TreeState $ \ _ g t ->
+  getRandomR lohi = TreeState $ \ _ g t s -> let (a, g') = randomR lohi g in (a, s, t, g')
+  getRandom = TreeState $ \ _ g t s -> let (a, g') = random g in (a, s, t, g')
+  getRandomRs lohi = TreeState $ \ _ g t s ->
                                    let (as, g') = first (randomRs lohi) . split g
-                                   in (a, t, g')
-  getRandoms = TreeState $ \ _ g t ->
+                                   in (a, s, t, g')
+  getRandoms = TreeState $ \ _ g t s ->
                              let (as, g') = first randoms . split g
-                             in (a, t, g')
+                             in (a, s, t, g')
 
 reader :: (Parameters -> a) -> TreeState g a
 reader = asks
 {-# INLINE reader #-}
 
 ask :: TreeState g Parameters
-ask = TreeState $ \ p g t -> (p, t, g)
+ask = TreeState $ \ p g t s -> (p, s t, g)
 {-# INLINE ask #-}
 
 asks :: (Parameters -> a) -> TreeState g a
-asks f = TreeState $ \ p g t -> (f r, t, g)
+asks f = TreeState $ \ p g t s -> (f r, s, t, g)
 {-# INLINE asks #-}
 
-state :: (Tree -> (a, Tree)) -> TreeState g a
-state f = TreeState $ \ _ g t -> let (a, t') = f t in (a, t', g)
-{-# INLINE state #-}
+tState :: (Tree -> (a, Tree)) -> TreeState g a
+tState f = TreeState $ \ _ g t s -> let (a, t') = f t in (a, s, t', g)
+{-# INLINE tState #-}
+
+sState :: (Stem -> (a, Stem)) -> TreeState g a
+sState f = TreeState $ \ _ g t s -> let (a, s') = f s in (a, s', t, g)
+{-# INLINE sState #-}
   
-get :: TreeState g Tree
-get = TreeState $ \ _ g t -> (t, t, g)
-{-# INLINE get #-}
+tGet :: TreeState g Tree
+tGet = TreeState $ \ _ g t s -> (t, s, t, g)
+{-# INLINE tGet #-}
 
-put :: Tree -> TreeState g ()
-put t = TreeState $ \ _ g _ -> ((), t, g)
-{-# INLINE put #-}
+sGet :: TreeState g Stem
+sGet = TreeState $ \ _ g t s -> (s, s, t, g)
+{-# INLINE sGet #-}
 
-modify :: (Tree -> Tree) -> TreeState g ()
-modify f = TreeState $ \ _ g t -> ((), f t, g)
-{-# INLINE modify #-}
+gGet :: TreeState g g
+gGet = TreeState $ \ _ g t s -> (g, s, t, g)
+{-# INLINE gGet #-}
 
-gets :: (Tree -> a) -> TreeState g a
-gets f = TreeState $ \ _ g t -> (f t, t, g)
-{-# INLINE gets #-}
+tPut :: Tree -> TreeState g ()
+tPut t = TreeState $ \ _ g _ s -> ((), s, t, g)
+{-# INLINE tPut #-}
 
-getG :: TreeState g g
-getG = TreeState $ \ _ g t -> (g, t, g)
-{-# INLINE getG #-}
+sPut :: Stem -> TreeState g ()
+sPut s = TreeState $ \ _ g t _ -> ((), s, t, g)
+{-# INLINE sPut #-}
 
-putG :: g -> TreeState g ()
-putG g = TreeState $ \ _ _ t -> ((), t, g)
-{-# INLINE putG #-}
+gPut :: g -> TreeState g ()
+gPut g = TreeState $ \ _ _ t s -> ((), s, t, g)
+{-# INLINE gPut #-}
 
-calcShapeRatio :: Int -> Double -> TreeState g Double
+tModify :: (Tree -> Tree) -> TreeState g ()
+tModify f = TreeState $ \ _ g t s -> ((), s, f t, g)
+{-# INLINE tModify #-}
+
+sModify :: (Stem -> Stem) -> TreeState g ()
+sModify f = TreeState $ \ _ g t s -> ((), f s, t g)
+{-# INLINE sModify #-}
+
+tGets :: (Tree -> a) -> TreeState g a
+tGets f = TreeState $ \ _ g t s -> (f t, s, t, g)
+{-# INLINE tGets #-}
+
+sGets :: (Shape -> a) -> TreeState g a
+sGets f = TreeState $ \ _ g t s -> (f s, s, t, g)
+{-# INLINE sGets #-}
+
+calcShapeRatio :: PShape -> Double -> TreeState g Double
 calcShapeRatio shape ratio =
   case shape of
-    -- spherical
-    1 -> return $ 0.2 + 0.8 * sin (pi * ratio)
-    -- hemispherical
-    2 -> return $ 0.2 + 0.8 * sin (0.5 * pi * ratio)
-    -- cylindrical
-    3 -> return 1
-    -- tapered cylindrical
-    4 -> return $ 0.5 + 0.5 * ratio
-    -- flame
-    5 -> return $ if ratio <= 0.7 then ratio / 0.7 else (1 - ratio) / 0.3
-    -- inverse conical
-    6 -> return $ 1 - 0.8 * ratio
-    -- tend flame
-    7 -> return $ if ratio <= 0.7 then 0.5 + 0.5 * ratio / 0.7 else 0.5 + 0.5 * (1 - ratio) / 0.3
-    -- envelope
-    8 -> if ratio < 0 || ratio > 1
+    Spherical -> return $ 0.2 + 0.8 * sin (pi * ratio)
+    Hemispherical -> return $ 0.2 + 0.8 * sin (0.5 * pi * ratio)
+    Cylindrical -> return 1
+    TaperedCylindrical -> return $ 0.5 + 0.5 * ratio
+    Flame -> return $ if ratio <= 0.7 then ratio / 0.7 else (1 - ratio) / 0.3
+    InverseConical -> return $ 1 - 0.8 * ratio
+    TendFlame -> return $ if ratio <= 0.7
+                          then 0.5 + 0.5 * ratio / 0.7
+                          else 0.5 + 0.5 * (1 - ratio) / 0.3
+    Envelope -> if ratio < 0 || ratio > 1
          then return 0
          else do Parameters {..} <- ask
                  if ratio < 1 - pPruneWidthPeak
                    then return $ (ratio / (1 - pPruneWidthPeak)) ^ pPrunePowerHigh
                    else return $ ((1 - ratio) / (1 - pPruneWidthPeak)) ^ pPrunePowerLow
-    -- conical
-    _ -> return $ 0.2 + 0.8 * ratio
+    Conical -> return $ 0.2 + 0.8 * ratio
 
-calcStemLength :: Stem -> TreeState g Stem
-calcStemLength stem = do
-  Tree {..} <- get
-  case sDepth stem of
+calcStemLength :: TreeState g Double
+calcStemLength = do
+  Tree {..} <- tGet
+  depth <- sGets sDepth
+  case depth of
     -- trunk
     0 -> do Parameters {..} <- ask
             randomUniform <- getRandomR (-1, 1)
-            let result = tTreeScale * (length V.! 0 + (randomUniform * pLengthV V.! 0))
-            modify $ \ Tree {..} -> Tree { tTrunkLength = result, .. }
-            return $ stem { sLength = max 0 result }
+            let length = tTreeScale * ((length V.! 0) + (randomUniform * (pLengthV V.! 0)))
+            tModify $ \ tree -> tree { tTrunkLength = length }
+            return $ max 0 length
     -- first level
-    1 -> do let parent = tStems V.! sParent stem
+    1 -> do parentIdx <- sGets sParent
+            let parent = tStems V.! parentIdx
             Parameters {..} <- ask
+            offset <- sGets sOffset
             shapeRatio <- calcShapeRatio pShape $
-                          (sLength parent - sOffset stem) / (sLength parent - tBaseLength)
-            return $ stem { sLength = sLength parent * sLengthChildMax * shapeRatio }
-    _ -> let parent = tStems V.! sParent stem
-         in return $ stem
-            { sLength = sLengthChildMax parent * (sLength parent - 0.7 * sOffset stem) }
+                          (sLength parent - offset) / (sLength parent - tBaseLength)
+            let length = sLength parent * sLengthChildMax parent * shapeRatio
+            return $ max 0 length
+    _ -> do parentIdx <- sGets sParent
+            let parent = tStems V.! parentIdx
+            offset <- sGets sOffset
+            let length = sLengthChildMax parent * (sLength parent - 0.7 * offset)
+            return $ max 0 length
             
-calcStemRadius :: Stem -> TreeState g Stem
-calcStemRadius stem = do
+calcStemRadius :: TreeState g Double
+calcStemRadius = do
   Parameters {..} <- ask
-  if sDepth stem == 0
-    then return $ stem { sRadius = sLength stem * pRatio * (pRadiusMod V.! 0) }
-    else do Tree {..} <- get
+  depth <- sGets sDepth
+  if depth == 0
+    then return $ sLength stem * pRatio * (pRadiusMod V.! 0) 
+    else do Tree {..} <- tGet
+            parentIdx <- sGets sParent
             let parent = tStems V.! sParent stem
                 result = pRadiusMod V.! (sDepth stem) * sRadius parent *
                          ((sLength stem / sLength parent) ^ pRatioPower)
                 result' = max 0.005 result
                 result'' = min (sRadiusLimit stem) result'
-            return $ stem { sRadius = result'' }
+            return result''
 
 calcCurveAngle :: Double -> Double -> TreeState g Double
 calcCurveAngle depth segInd = do
@@ -244,9 +277,10 @@ calcCurveAngle depth segInd = do
   randomUniform <- getRandomR (-1, 1)
   return $ curveAngle + randomUniform * (curveV / curveRes)
 
-calcDownAngel :: Stem -> Double -> TreeState g Double
-calcDownAngel stem stemOffset = do
+calcDownAngel :: Double -> TreeState g Double
+calcDownAngel stemOffset = do
   Parameters {..} <- ask
+  stem <- sGet
   let depthPlus = min (sDepth stem + 1) pMaxDepth
   if pDownAngleV V.! depthPlus >= 0
     then do randomUniform <- getRandomR (-1, 1)
@@ -268,19 +302,21 @@ calcRotateAngle depth prevAngle = do
     else do randomUniform <- getRandomR (-1, 1)
             return $ prevAngle * (180 + rotate + randomUniform * rotateV)
 
-calcLeafCount :: Stem -> TreeState g Int
-calcLeafCount stem = do
+calcLeafCount :: TreeState g Int
+calcLeafCount = do
   Parameters {..} <- ask
+  stem <- sGet
   if pLeafBlosNum >= 0
     then do Tree {..} <- get
             let leaves = pLeafBlosNum * tTreeScale / pGScale
                 parent = tStems V.! sParent stem 
             return $ leaves * (sLength stem / (sLengthChildMax parent * sLength parent))
-    else return sLeafBlosNum
+    else return $ sLeafBlosNum stem
 
-calcBranchCount :: Stem -> TreeState g Int
-calcBranchCount stem = do
+calcBranchCount :: TreeState g Int
+calcBranchCount = do
   Parameters {..} <- ask
+  stem <- sGet
   let depth = sDepth stem
       depthPlus = min (depth + 1) pMaxDepth
       branches = pBranches V.! depthPlus
@@ -298,9 +334,10 @@ calcBranchCount stem = do
                            (1 - 0.5 * sOffset stem / sLength parent)
   return $ result / (1 - (pBaseSize V.! depth))
 
-calcRadiusAtOffset :: Stem -> Int -> TreeState g Double
-calcRadiusAtOffset stem z1 = do
+calcRadiusAtOffset :: Double -> TreeState g Double
+calcRadiusAtOffset z1 = do
   Parameters {..} <- ask
+  stem <- sGet
   let nTaper = pTaper V.! sDepth stem
       unitTaper = case (nTaper < 1, nTaper < 2) of
                     (True, _) -> nTaper
@@ -324,6 +361,76 @@ calcRadiusAtOffset stem z1 = do
              flare = pFlare * (100 ^ yVal) / 100 + 1
          in return $ radius * flare
     else return radius
+
+calcPointOnBezier :: Double -> BezierPoint -> BezierPoint -> V3 Double
+calcPointOnBezier offset startPoint endPoint =
+  if offset < 0 || offset > 1 then error "Expected '0 < offset < 1' but found 'offset = "
+                                   ++ show offset ++ "'.'"
+  else let co1 = bpControl startPoint
+           hr1 = bpHandleRight startPoint
+           co2 = bpControl endPoint
+           hl2 = bpHandleLeft endPoint
+           1mOffset = 1 - offset 
+       in (1mOffset ^ 3) *^ co1
+          + 3 * (1mOffset ^ 2) * offset *^ hr1
+          + 3 * 1mOffset * (offset ^ 2) *^ hl2
+          + (offset ^ 3) *^ co2
+
+calcTangentToBezier :: Double -> BezierPoint -> BezierPoint -> V3 Double
+calcTangentToBezier offset startPoint endPoint =
+  if offset < 0 || offset > 1 then error "Expected '0 < offset < 1' but found 'offset = "
+                                   ++ show offset ++ "'.'"
+  else let co1 = bpControl startPoint
+           hr1 = bpHandleRight startPoint
+           co2 = bpControl endPoint
+           hl2 = bpHandleLeft endPoint
+           1mOffset = 1 - offset 
+       in 2 * (1mOffset ^ 2) *^ (hr1 - co1)
+          + 6 * 1mOffset * offset *^ (hl2 - hr1)
+          + 3 * (offset ^ 2) *^ (co2 - hl2)
+
+-- callsight assures that pointsPerSeg > 2
+increaseBezierPointRes :: Double -> Double -> TreeState g ()
+increaseBezierPointRes segInd pointsPerSeg = do
+  Parameters {..} <- ask
+  depth <- sGets sDepth
+  curve <- sGets sCurve
+  let curveRes = truncate $ pCurveRes V.! depth
+      curveNumPoints = V.length curve
+      segEndPoint = curve V.! curveNumPoints - 1
+      segStartPoint = curve V.! curveNumPoints - 2
+  -- update last two entries in the curve
+  r1 <- calcRadiusAtOffset $ (segInd - 1) / curveRes
+  let pntCo = calcPointOnBezier (1 / (pointsPerSeg - 1)) segStartPoint segEndPoint
+      tangent = normalize $ calcTangentToBezier (1 / (pointsPerSeg - 1)) segStartPoint segEndPoint
+      dirVecMag = norm $ bpHandleLeft segEndPoint - bpHandleRight segStartPoint
+      pntHL = pntCo - tangent ^* dirVecMag
+      pntHR = pntCo + tangent ^* dirVecMag
+  r2 <- calcRadiusAtOffset $ ((1 / (pointsPerSeg - 1)) + segInd - 1) / curveRes
+  sModify $ \ Stem {..} -> Stem
+    { sCurve = sCurve V.// [ (curveNumPoints - 2, segStartPoint { bpRadius = r1 })
+                           , (curveNumPoints - 1, BezierPoint pntCo pntHL pntHR r2)
+                           ], .. }
+  -- calc vector to be concatenated
+  newPnts <- V.generateM (pointsPerSeg - 2) $ \i -> do
+        let k = i + 2
+            offset = k / (pointsPerSeg - 1)
+            (co, hl, hr) = if k = pointsPerSeg - 1
+                           then ( bpControl segEndPoint
+                                , bpHandleLeft segEndpoint
+                                , bpHandleRight segEndPoint)
+                           else let co = calcPointOnBezier offset segStartPoint segEndPoint
+                                    tangent = normalize $
+                                              calcTangentToBezier offset segStartPoint segEndPoint
+                                    dirVecMag = norm 
+                                                (bpHandleLeft segEndPoint
+                                                 - bpHandleRight segStartPoint)
+                                    hl = co - tangent ^* dirVecMag
+                                    hr = co + tangent ^* dirVecMag
+                                in (co, hl, hr)
+        radius <- calcRadiusAtOffset $ (offset + segInd - 1) / curveRes
+        return $ BezierPoint co hl hr radius
+  sModify $ \ Stem {..} -> Stem { sCurve = sCurve V.++ newPnts }
 
 trunkBaseSplit :: TreeState g (V.Vector (V3 Double, Double))
 trunkBaseSplit = do
