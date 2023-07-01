@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Gox.Turtle where
 
 -- linear
@@ -36,4 +38,4 @@ rollLeft angle = rollRight (-angle)
 
 move :: Double -> Turtle -> Turtle
 move distance Turtle {..} =
-  Turtle { turtlePos = turtlePos + turtleDir * distance, .. }
+  Turtle { turtlePos = turtlePos + turtleDir ^* distance, .. }
