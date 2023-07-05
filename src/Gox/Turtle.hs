@@ -10,6 +10,7 @@ data Turtle = Turtle
   , turtlePos :: V3 Double
   , turtleRight :: V3 Double
   }
+  deriving (Show, Eq)
 
 turnRight :: Double -> Turtle -> Turtle
 turnRight angle Turtle {..} =
