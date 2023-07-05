@@ -43,7 +43,7 @@ data Stem = Stem
   , sChildren       :: [Int]
   , sLength         :: Double
   , sRadius         :: Double
-  , sLengthChildMax :: Int
+  , sLengthChildMax :: Double
   }
 
 stemFromDepth :: Int -> Stem
@@ -67,7 +67,7 @@ data Tree = Tree
   , tTreeScale     :: Double
   , tBranchCurves  :: V.Vector Curve
   , tBaseLength    :: Double
-  , tSplitNumError :: [Int]
+  , tSplitNumError :: V.Vector Double
   --, tTreeObj       :: Maybe TreeObj
   , tTrunkLength   :: Double
   , tStems         :: V.Vector Stem
@@ -223,6 +223,51 @@ sGets :: (Stem -> a) -> TreeState g a
 sGets f = TreeState $ \ _ g t s -> (f s, s, t, g)
 {-# INLINE sGets #-}
 
+saacos :: Double -> Double
+saacos fac =
+  if fac <= -1 then pi
+  else if fac >= 1 then 0
+       else acos fac
+
+mulQtQt :: Quaternion Double -> Quaternion Double -> Quaternion Double
+mulQtQt (Quaternion q10 (V3 q11 q12 q13)) (Quaternion q20 (V3 q21 q22 q23)) =
+  let t0 = q10 * q20 - q11 * q21 - q12 * q22 - q13 * q23
+      t1 = q10 * q21 + q11 * q20 + q12 * q23 - q13 * q22
+      t2 = q10 * q22 + q12 * q20 + q13 * q21 - q11 * q23
+      t3 = q10 * q23 + q13 * q20 + q11 * q22 - q12 * q21
+  in Quaternion t0 (V3 t1 t2 t3)
+
+toTrackQuatZY :: V3 Double -> Quaternion Double
+toTrackQuatZY v =
+  let axis = if abs (v ^._x) + abs (v ^._y) < (10 ^ (-4))
+            then V3 1 (v ^._x) 0
+            else V3 (negate (v ^._y)) (v ^._x) 0
+      co = (v ^._z) / 3
+      q = axisAngle axis (saacos co)
+      mat = fromQuaternion q
+      fp = mat ^._z
+      angle = -0.5 * atan2 (negate fp ^._x) (negate fp ^._y)
+      co' = cos angle
+      si' = (sin angle) / 3
+      q2 = Quaternion co' (v ^* si')
+  in mulQtQt q q2
+
+calcHelixPoints :: RandomGen g => Turtle -> Double -> Double
+  -> TreeState g (V3 Double, V3 Double, V3 Double, V3 Double)
+calcHelixPoints turtle rad pitch = do
+  spinAng <- getRandomR (0, 2 * pi)
+  let p0 = V3 0 (negate rad) (negate pitch / 4)
+      p1 = V3 (4 * rad/ 3) (negate rad) 0
+      p2 = V3 (4 * rad / 3) rad 0
+      p3 = V3 0 rad (pitch / 4) 
+      trf = toTrackQuatZY (turtleDir turtle)
+      rotQuat = Quaternion spinAng (V3 0 0 1)
+      p0' = rotate trf $ rotate rotQuat p0
+      p1' = rotate trf $ rotate rotQuat p1
+      p2' = rotate trf $ rotate rotQuat p2
+      p3' = rotate trf $ rotate rotQuat p3
+  return (p1' - p0', p2' - p0', p3' - p0', turtleDir turtle)
+
 calcShapeRatio :: PShape -> Double -> TreeState g Double
 calcShapeRatio shape ratio =
   case shape of
@@ -262,12 +307,12 @@ calcStemLength = do
             offset <- sGets sOffset
             shapeRatio <- calcShapeRatio pShape $
                           (sLength parent - offset) / (sLength parent - tBaseLength)
-            let length = sLength parent * fromIntegral (sLengthChildMax parent) * shapeRatio
+            let length = sLength parent * sLengthChildMax parent * shapeRatio
             return $ max 0 length
     _ -> do let Just parentIdx = sParent stem
                 parent = tStems V.! parentIdx
             offset <- sGets sOffset
-            let length = fromIntegral (sLengthChildMax parent) * (sLength parent - 0.7 * offset)
+            let length = (sLengthChildMax parent) * (sLength parent - 0.7 * offset)
             return $ max 0 length
             
 calcStemRadius :: TreeState g Double
@@ -339,7 +384,7 @@ calcLeafCount = do
                 Just parentIdx = sParent stem
                 parent = tStems V.! parentIdx
             return $ leaves *
-              (sLength stem / (fromIntegral (sLengthChildMax parent) * sLength parent))
+              (sLength stem / (sLengthChildMax parent * sLength parent))
     else return $ fromIntegral pLeafBlosNum 
 
 calcBranchCount :: RandomGen g => TreeState g Double
@@ -360,7 +405,7 @@ calcBranchCount = do
                       in if depth == 1
                       then return $ branches * (0.2 + 0.8 * 
                                                  (sLength stem / sLength parent) /
-                                                 (fromIntegral $ sLengthChildMax parent))
+                                                 (sLengthChildMax parent))
                       else return $ branches *
                            (1 - 0.5 * sOffset stem / sLength parent)
   return $ result / (1 - (pBaseSize V.! depth))
@@ -542,7 +587,8 @@ makeTree = do
   case pBranches V.! 0 of
     1 -> do
       angle <- getRandomR (0, 2 * pi)
-      makeStemBasic (rollRight angle turtle) (stemFromDepth 0)
+      sPut (stemFromDepth 0)
+      makeStem (rollRight angle turtle) 0 0 1 1 Nothing Nothing
     i -> do
       pas <- trunkBaseSplit
       makeTreeBranches (i - 1) pas
@@ -557,14 +603,240 @@ makeTree = do
                                                       turtle
                                                     )
                                                     { turtlePos = fst (pas V.! i) }
-                                      in makeStemBasic nTurtle (stemFromDepth 0)
+                                      in do sPut (stemFromDepth 0)
+                                            makeStem nTurtle 0 0 1 1 Nothing Nothing
                            | otherwise = do let nTurtle = (rollRight
                                                             (snd (pas V.! i) - (pi / 2))
                                                             turtle
                                                           )
                                                           { turtlePos = fst (pas V.! i) }
-                                            makeStemBasic nTurtle (stemFromDepth 0)
+                                            sPut (stemFromDepth 0)
+                                            makeStem nTurtle 0 0 1 1 Nothing Nothing
                                             makeTreeBranches (i - 1) pas
 
-makeStemBasic :: Turtle -> Stem -> TreeState g ()
-makeStemBasic turtle stem = undefined
+makeStem :: RandomGen g => Turtle -> Int -> Double -> Double -> Double -> Maybe Turtle
+  -> Maybe Turtle -> TreeState g ()
+makeStem turtle start splitCorrAngle numBranchesFactor cloneProb mposCorrTurtle mclonedTurtle
+  = do
+  radiusLimit <- sGets sRadiusLimit
+  if 0 <= radiusLimit && radiusLimit < 0.0001
+    then return ()
+    else do
+    Parameters {..} <- ask
+    depth <- sGets sDepth
+    let depthPlus = if depth + 1 > pLevels then pLevels else depth + 1
+    when (start == 0) $ do
+      rand <- getRandomR (-1, 1)
+      sModify $ \ stem -> stem
+        { sLengthChildMax =
+            (pLength V.! depthPlus) + rand * (pLengthV V.! depthPlus)
+        }
+      length <- calcStemLength
+      sModify $ \ stem -> stem { sLength = length }
+      radius <- calcStemRadius
+      sModify $ \ stem -> stem { sRadius = radius }
+      when (depth == 0) $ tModify $ \ tree -> tree { tBaseLength = length * (pBaseSize V.! 0) }
+    r <- sGets sRadius
+    rl <- sGets sRadiusLimit
+    let turtle' = case mposCorrTurtle of
+          Just posCorrTurtle -> let posCorrTurtle' = move (negate $ min r rl) posCorrTurtle
+                                in turtle { turtlePos = turtlePos posCorrTurtle' }
+          Nothing -> turtle
+    case (mclonedTurtle, pPruneRatio > 0) of
+      (Nothing, True) -> do
+        startLength <- sGets sLength
+        rState <- gGet
+        splitErrState <- tGets tSplitNumError
+        inPruningEnvelope <- testStem turtle' start splitCorrAngle cloneProb
+        return ()
+      _ -> return ()
+
+testStem :: RandomGen g => Turtle -> Int -> Double -> Double -> TreeState g (Bool, Turtle)
+testStem turtle start splitCorrAngle cloneProb = do
+  Parameters {..} <- ask
+  stem <- sGet
+  let depth = sDepth stem
+      depthPlus = if depth + 1 > pLevels then pLevels else depth + 1
+      curveRes = pCurveRes V.! depth
+      segSplits = pSegSplits V.! depth
+      segLength = sLength stem / fromIntegral curveRes
+      baseSegInd = ceiling $ (pBaseSize V.! 0) * (fromIntegral $ pCurveRes V.! 0)
+  if pCurveV V.! depth < 0
+    then testStemHelix turtle start splitCorrAngle cloneProb depth
+         curveRes segSplits segLength baseSegInd
+    else testStemRegular turtle start splitCorrAngle cloneProb depth
+         curveRes segSplits segLength baseSegInd
+
+testStemHelix :: RandomGen g => Turtle -> Int -> Double -> Double -> Int -> Int -> Double
+  -> Double -> Int -> TreeState g (Bool, Turtle)
+testStemHelix turtle start splitCorrAngle cloneProb depth curveRes segSplits
+  segLength baseSegInd = do
+  r1 <- getRandomR (0.8, 1.2)
+  r2 <- getRandomR (0.8, 1.2)
+  curveV <- asks pCurveV
+  length <- sGets sLength
+  let tanAng = tan $ (pi / 2) - abs (curveV V.! depth)
+      helPitch = 2 * length / (fromIntegral curveRes) * r1
+      helRadius = 3 * helPitch / (16 * tanAng) * r2
+  turtle' <- applyFullTropism turtle depth
+  (_, _, hel2, helAxis) <- calcHelixPoints turtle' helRadius helPitch
+  (_, turtle'', _, _) <- iterateUntilM
+    (\(i, _, _, _) -> i == curveRes + 1)
+    (start, turtle', hel2, V3 0 0 0) $
+    \ (segInd, turt, helP2, prevHel) -> do
+      let pos = turtlePos turt
+          (pos', helP2') = if segInd == 0
+                           then (pos, helP2)
+                           else if segInd == 1
+                                then (hel2 + pos, helP2)
+                                else let q = Quaternion ((fromIntegral segInd - 1) * pi) helAxis
+                                         p = rotate q helP2
+                                     in (prevHel + p, p)
+          prevHel' = pos'
+      return (segInd + 1, turt { turtlePos = pos' }, helP2', prevHel')
+  tf <- pointInside (turtlePos turtle'')
+  return (tf, turtle'')
+
+testStemRegular :: RandomGen g => Turtle -> Int -> Double -> Double -> Int -> Int -> Double
+  -> Double -> Int -> TreeState g (Bool, Turtle)
+testStemRegular turtle start splitCorrAngle cloneProb depth curveRes segSplits segLength
+  baseSegInd = do
+  (_, turtle', success, _, _) <- iterateUntilM
+    (\ (i, _, tf, _, _) -> i == curveRes + 1 || not tf)
+    (start, turtle, True, cloneProb, splitCorrAngle)
+    (testStemRegularIteration start depth curveRes baseSegInd segSplits segLength)
+  if success
+    then do isInside <- pointInside (turtlePos turtle')
+            return (isInside, turtle')
+    else return (False, turtle')
+
+testStemRegularIteration :: RandomGen g => Int -> Int -> Int -> Int -> Double -> Double
+  -> (Int, Turtle, Bool, Double, Double) -> TreeState g (Int, Turtle, Bool, Double, Double)
+testStemRegularIteration start depth curveRes baseSegInd segSplits segLength 
+  (segInd, turtle, _, cloneProb, splitCorrAngle) = do
+  let remainingSegs = curveRes + 1 - segInd
+  (turtle', hasNewPoint) <- setUpNextNormalBP turtle depth start segInd baseSegInd segLength
+  if hasNewPoint
+    then if segInd > start
+         then
+           do (numOfSplits, cloneProb') <-
+                calcNumOfSplits depth segInd baseSegInd curveRes segSplits cloneProb
+              if numOfSplits > 0
+                then do (sprAngle, splAngle, splitCorrAngle', isBaseSplit, usingDirectSplit) <-
+                          calcAnglesForSplit turtle' depth remainingSegs segInd baseSegInd
+                        let turtle'' = applySplitBaseStem turtle' splAngle sprAngle
+                                       isBaseSplit usingDirectSplit numOfSplits
+                        turtle''' <- applyFullTropism turtle'' depth
+                        return (segInd + 1, turtle''', True, cloneProb', splitCorrAngle')
+                else do turtle'' <-
+                          applyCurveSplitCorr turtle' depth curveRes segInd splitCorrAngle
+                        turtle''' <- applyFullTropism turtle'' depth
+                        return (segInd + 1, turtle''', True, cloneProb', splitCorrAngle)
+         else return (segInd + 1, turtle', True, cloneProb, splitCorrAngle)
+    else return (segInd + 1, turtle', False, cloneProb, splitCorrAngle)
+
+applyFullTropism :: Turtle -> Int -> TreeState g Turtle
+applyFullTropism turtle depth = do
+  tropism <- asks pTropism
+  if depth > 1
+    then return $ applyTropism turtle tropism
+    else return $ applyTropism turtle (V3 (tropism ^._x) (tropism ^._y) 0)
+
+setUpNextNormalBP :: Turtle -> Int -> Int -> Int -> Int -> Double -> TreeState g (Turtle, Bool)
+setUpNextNormalBP turtle depth start segInd baseSegInd segLength = 
+  if segInd /= start
+  then let turtle' = move segLength turtle
+       in
+         do isInside <- pointInside (turtlePos turtle')
+            if not (depth == 0 && start < baseSegInd) && not isInside
+              then return (turtle', False)
+              else return (turtle', True)
+    else return (turtle, True)
+
+calcNumOfSplits :: RandomGen g => Int -> Int -> Int -> Int -> Double -> Double
+  -> TreeState g (Int, Double)
+calcNumOfSplits depth segInd baseSegInd curveRes segSplits cloneProb = do
+  Parameters {..} <- ask
+  if pBaseSplits > 0 && depth == 0 && segInd == baseSegInd
+    then
+    do r <- getRandomR (0 :: Double, 1)
+       return (truncate $ r * (fromIntegral pBaseSplits) + 0.5, cloneProb)
+    else if segSplits > 0 && segInd < curveRes && (depth > 0 || segInd > baseSegInd)
+         then 
+           do r <- getRandomR (0, 1)
+              if r <= cloneProb
+                then
+                do splitNumError <- tGets tSplitNumError
+                   let numOfSplits = truncate $ segSplits + (splitNumError V.! depth)
+                       cloneProb' = cloneProb / (fromIntegral numOfSplits + 1)
+                   tModify $ \ tree -> tree
+                     { tSplitNumError = tSplitNumError tree V.//
+                       [( depth
+                        , (tSplitNumError tree V.! depth)
+                          - ((fromIntegral numOfSplits) - segSplits))]
+                     }
+                   return (numOfSplits, cloneProb')
+                else return (0, cloneProb)
+         else return (0, cloneProb)
+
+calcAnglesForSplit :: RandomGen g => Turtle -> Int -> Int -> Int -> Int
+  -> TreeState g (Double, Double, Double, Bool, Bool)
+calcAnglesForSplit turtle depth remainingSegs segInd baseSegInd = do
+  Parameters {..} <- ask
+  let isBaseSplit = pBaseSplits > 0 && depth == 0 && segInd == baseSegInd
+      usingDirectSplit = pSplitAngle V.! depth < 0
+  if usingDirectSplit
+    then
+    do
+      r <- getRandomR (-1, 1)
+      let sprAngle = (abs (pSplitAngle V.! depth)) + r * (pSplitAngleV V.! depth)
+          splAngle = 0
+          splitCorrAngle = 0
+      return (sprAngle, splAngle, splitCorrAngle, isBaseSplit, usingDirectSplit)
+    else
+    do
+      r1 <- getRandomR (-1, 1)
+      r2 <- getRandomR (0, 1)
+      let dec = declination $ turtleDir turtle
+          splAngle = max 0 $ (pSplitAngle V.! depth) + r1 * (pSplitAngleV V.! depth) - dec
+          splitCorrAngle = splAngle / (fromIntegral remainingSegs)
+          sprAngle = negate $ 20 + 0.75 * (30 + (abs $ dec - (pi / 2)) * r2 * r2)
+      return (sprAngle, splAngle, splitCorrAngle, isBaseSplit, usingDirectSplit)
+          
+applySplitBaseStem :: Turtle -> Double -> Double -> Bool -> Bool -> Int -> Turtle
+applySplitBaseStem turtle splAngle sprAngle isBaseSplit usingDirectSplit numOfSplits =
+  let turtle' = pitchDown (splAngle / 2) turtle
+  in if not isBaseSplit && numOfSplits == 1
+     then if usingDirectSplit
+          then turnLeft (sprAngle / 2) turtle'
+          else let dir' = normalize $ rotate
+                          (Quaternion (negate $ sprAngle / 2) (V3 0 0 1))
+                          (turtleDir turtle')
+                   right' = normalize $ rotate
+                            (Quaternion (negate $ sprAngle / 2) (V3 0 0 1))
+                            (turtleRight turtle')
+               in turtle' { turtleDir = dir', turtleRight = right' }
+     else turtle'
+
+applyCurveSplitCorr :: RandomGen g => Turtle -> Int -> Int -> Int -> Double -> TreeState g Turtle
+applyCurveSplitCorr turtle depth curveRes segInd splitCorrAngle = do
+  Parameters {..} <- ask
+  r <- getRandomR (-1, 1)
+  let t' = turnLeft (r * (pBendV V.! depth) / (fromIntegral curveRes)) turtle
+  curveAngle <- calcCurveAngle depth segInd
+  return $ pitchDown (curveAngle - splitCorrAngle) t'
+        
+declination :: V3 Double -> Double
+declination (V3 x y z) = atan2 (sqrt $ x * x + y * y) z
+
+iterateUntilM :: Monad m => (a -> Bool) -> a -> (a -> m a) -> m a
+iterateUntilM p v f = go p f v
+  where
+    go p f v
+      | p v       = return v
+      | otherwise = f v >>= go p f
+
+whenV :: Monad m => Bool -> a -> m a -> m a
+whenV p a m
+  | p         = m
+  | otherwise = return a
