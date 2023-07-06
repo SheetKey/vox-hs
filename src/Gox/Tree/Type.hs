@@ -21,7 +21,7 @@ import Control.Monad.Reader.Class
 import Linear
 
 -- vector
-import qualified Data.Vector.Unboxed as V 
+import qualified Data.Vector as V 
 
 -- MonadRandom
 import Control.Monad.Random.Lazy
@@ -160,6 +160,9 @@ instance Monad (T g) where
     in (b, t'', g'')
   {-# INLINE (>>=) #-}
 
+instance MonadFail (T g) where
+  fail = error 
+
 instance RandomGen g => MonadRandom (T g) where
   getRandomR lohi = T $ \ _ g t -> let (a, g') = randomR lohi g in (a, t, g')
   getRandom = T $ \ _ g t -> let (a, g') = random g in (a, t, g')
@@ -212,6 +215,9 @@ instance Monad (RG g) where
         ~(b, g'') = runRG (k a) trg g'
     in (b, g'')
 
+instance MonadFail (RG g) where
+  fail = error
+
 instance MonadReader TreeRG (RG g) where
   ask = RG (,)
   {-# INLINE ask #-}
@@ -254,6 +260,9 @@ instance Monad (R g) where
         ~b = runR (k a) r
     in b
   {-# INLINE (>>=) #-}
+
+instance MonadFail (R g) where
+  fail = error 
 
 instance MonadReader (TreeR g) (R g) where
   ask = R $ \ r -> r
