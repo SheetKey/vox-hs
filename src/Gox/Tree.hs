@@ -642,21 +642,21 @@ makeStem turtle start splitCorrAngle numBranchesFactor cloneProb mposCorrTurtle 
           Just posCorrTurtle -> let posCorrTurtle' = move (negate $ min r rl) posCorrTurtle
                                 in turtle { turtlePos = turtlePos posCorrTurtle' }
           Nothing -> turtle
-    case (mclonedTurtle, pPruneRatio > 0) of
-      (Nothing, True) -> do
-        startLength <- sGets sLength
-        rState <- gGet
-        splitErrState <- tGets tSplitNumError
-        inPruningEnvelope <- testStem turtle' start splitCorrAngle cloneProb
-        return ()
-      _ -> return ()
+    turtle'' <- case (mclonedTurtle, pPruneRatio > 0) of
+                  (Nothing, True) -> do
+                    startLength <- sGets sLength
+                    rState <- gGet
+                    splitErrState <- tGets tSplitNumError
+                    (inPruningEnvelope, turtle'') <-
+                      testStem turtle' start splitCorrAngle cloneProb
+                    
+                  _ -> return ()
 
 testStem :: RandomGen g => Turtle -> Int -> Double -> Double -> TreeState g (Bool, Turtle)
 testStem turtle start splitCorrAngle cloneProb = do
   Parameters {..} <- ask
   stem <- sGet
   let depth = sDepth stem
-      depthPlus = if depth + 1 > pLevels then pLevels else depth + 1
       curveRes = pCurveRes V.! depth
       segSplits = pSegSplits V.! depth
       segLength = sLength stem / fromIntegral curveRes
