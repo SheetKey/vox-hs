@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Gox.Tree.Algorithm where
@@ -6,11 +7,21 @@ module Gox.Tree.Algorithm where
 import Gox.Turtle
 import Gox.Tree.Type
 
+-- base
+import Data.Maybe (fromJust)
+
 -- linear
 import Linear
 
 -- lens
-import Control.Lens
+import qualified Control.Lens.Getter as L
+
+-- optics-core
+import Optics.Core
+
+-- optics-extra
+import Optics.State
+import Optics.State.Operators
 
 -- mtl
 import Control.Monad.State.Class
@@ -26,15 +37,15 @@ validateParameters :: Parameters -> Bool
 validateParameters = undefined
 
 stemFromDepth :: Int -> Stem
-stemFromDepth _sDepth = Stem
-  { _sCurve          = Curve V.empty
-  , _sParent         = Nothing
-  , _sOffset         = 0
-  , _sRadiusLimit    = -1
-  , _sChildren       = []
-  , _sLength         = 0
-  , _sRadius         = 0
-  , _sLengthChildMax = 0
+stemFromDepth sDepth = Stem
+  { sCurve          = Curve V.empty
+  , sParent         = Nothing
+  , sOffset         = 0
+  , sRadiusLimit    = -1
+  , sChildren       = []
+  , sLength         = 0
+  , sRadius         = 0
+  , sLengthChildMax = 0
   , ..
   }
 
@@ -53,25 +64,52 @@ mulQtQt (Quaternion q10 (V3 q11 q12 q13)) (Quaternion q20 (V3 q21 q22 q23)) =
   in Quaternion t0 (V3 t1 t2 t3)
 
 toTrackQuatZY :: V3 Double -> Quaternion Double
-toTrackQuatZY v =
-  let axis = if abs (v ^._x) + abs (v ^._y) < (10 ^ (-4))
-            then V3 1 (v ^._x) 0
-            else V3 (negate (v ^._y)) (v ^._x) 0
-      co = (v ^._z) / 3
+toTrackQuatZY v@(V3 x y z) =
+  let axis = if abs x + abs y < (10 ^ (-4))
+            then V3 1 x 0
+            else V3 (negate y) x 0
+      co = z / 3
       q = axisAngle axis (saacos co)
       mat = fromQuaternion q
-      fp = mat ^._z
-      angle = -0.5 * atan2 (negate fp ^._x) (negate fp ^._y)
+      fp = mat L.^._z
+      angle = -0.5 * atan2 (negate fp L.^._x) (negate fp L.^._y)
       co' = cos angle
       si' = (sin angle) / 3
       q2 = Quaternion co' (v ^* si')
   in mulQtQt q q2
 
-calcHelixPoint :: RandomGen g => Double -> Double
-  -> RG g (V3 Double, V3 Double, V3 Double, V3 Double)
-calcHelixPoint rad pitch = do
+calcPointOnBezier :: Double -> BezierPoint -> BezierPoint -> V3 Double
+calcPointOnBezier offset startPoint endPoint =
+  if offset < 0 || offset > 1 then error $ "Expected '0 < offset < 1' but found 'offset = "
+                                   ++ show offset ++ "'.'"
+  else let co1 = bpControl startPoint
+           hr1 = bpHandleRight startPoint
+           co2 = bpControl endPoint
+           hl2 = bpHandleLeft endPoint
+           invOffset = 1 - offset 
+       in (invOffset ^ 3) *^ co1
+          + 3 * (invOffset ^ 2) * offset *^ hr1
+          + 3 * invOffset * (offset ^ 2) *^ hl2
+          + (offset ^ 3) *^ co2
+
+calcTangentToBezier :: Double -> BezierPoint -> BezierPoint -> V3 Double
+calcTangentToBezier offset startPoint endPoint =
+  if offset < 0 || offset > 1 then error $ "Expected '0 < offset < 1' but found 'offset = "
+                                   ++ show offset ++ "'.'"
+  else let co1 = bpControl startPoint
+           hr1 = bpHandleRight startPoint
+           co2 = bpControl endPoint
+           hl2 = bpHandleLeft endPoint
+           invOffset = 1 - offset 
+       in 2 * (invOffset ^ 2) *^ (hr1 - co1)
+          + 6 * invOffset * offset *^ (hl2 - hr1)
+          + 3 * (offset ^ 2) *^ (co2 - hl2)
+
+calcHelixPoints :: RandomGen g => Double -> Double
+  -> MS g r (V3 Double, V3 Double, V3 Double, V3 Double) 
+calcHelixPoints rad pitch = do
   spinAng <- getRandomR (0, 2 * pi)
-  Just dir <- preview $ treeState.turtle._Just.turtleDir
+  dir <- use $ #turtle % #turtleDir
   let p0 = V3 0 (negate rad) (negate pitch / 4)
       p1 = V3 (4 * rad/ 3) (negate rad) 0
       p2 = V3 (4 * rad / 3) rad 0
@@ -83,23 +121,3 @@ calcHelixPoint rad pitch = do
       p2' = rotate trf $ rotate rotQuat p2
       p3' = rotate trf $ rotate rotQuat p3
   return (p1' - p0', p2' - p0', p3' - p0', dir)
-
-calcShapeRatio :: PShape -> Double -> R g Double
-calcShapeRatio shape ratio =
-  case shape of
-    Spherical -> return $ 0.2 + 0.8 * sin (pi * ratio)
-    Hemispherical -> return $ 0.2 + 0.8 * sin (0.5 * pi * ratio)
-    Cylindrical -> return 1
-    TaperedCylindrical -> return $ 0.5 + 0.5 * ratio
-    Flame -> return $ if ratio <= 0.7 then ratio / 0.7 else (1 - ratio) / 0.3
-    InverseConical -> return $ 1 - 0.8 * ratio
-    TendFlame -> return $ if ratio <= 0.7
-                          then 0.5 + 0.5 * ratio / 0.7
-                          else 0.5 + 0.5 * (1 - ratio) / 0.3
-    Envelope -> if ratio < 0 || ratio > 1
-         then return 0
-         else do Parameters {..} <- view $ treeRG.parameters
-                 if ratio < 1 - _pPruneWidthPeak
-                   then return $ (ratio / (1 - _pPruneWidthPeak)) ** _pPrunePowerHigh
-                   else return $ ((1 - ratio) / (1 - _pPruneWidthPeak)) ** _pPrunePowerLow
-    Conical -> return $ 0.2 + 0.8 * ratio

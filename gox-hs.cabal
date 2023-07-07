@@ -48,6 +48,8 @@ library
                     , containers
                     , linear
                     , lens
+                    , optics-core
+                    , optics-extra
                     , JuicyPixels
                     , MonadRandom
                     , mtl
