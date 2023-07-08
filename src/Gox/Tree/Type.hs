@@ -2,6 +2,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Gox.Tree.Type where
 
@@ -183,8 +184,7 @@ evalC m = runC m (\ r -> \ _ g s -> (r, s, g))
 liftMC :: M g s a -> C g s r a
 liftMC m = C $ \ c -> \ p g s ->
   let ~(a, s', g') = m p g s
-      ~(b, s'', g'') = (c a) p g s
-  in (b, s'', g'')
+  in (c a) p g' s'
 {-# INLINE liftMC #-}
 
 instance MonadReader Parameters (C g s r) where
@@ -218,3 +218,8 @@ instance RandomGen g => MonadRandom (C g s r) where
 type T g = C g Tree
 
 type MS g = C g MakeStem
+
+runTinMS :: T g a a -> MS g r a
+runTinMS f = C $ \ k -> \ p g MakeStem {..} ->
+  let ~(r, Tree {..}, g') = (evalC f) p g Tree {..}
+  in k r p g' MakeStem {..}
