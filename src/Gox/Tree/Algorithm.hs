@@ -248,3 +248,30 @@ calcBranchCount stem = do
         (0.2 + 0.8 * (stem^. #sLength / parent^. #sLength) / parent^. #sLengthChildMax)
     return $ branches * (1 - 0.5 * (stem^. #sOffset) / (parent^. #sLength))
   return $ result / (1 - pBaseSize V.! depth)
+
+calcRadiusAtOffset :: Stem -> Double -> MS g r Double
+calcRadiusAtOffset stem z1 = do
+  Parameters {..} <- ask
+  let nTaper = pTaper V.! (stem^. #sDepth)
+  unitTaper <- callCC $ \ break -> do
+    when (nTaper < 1) $
+      break nTaper
+    when (nTaper < 2) $
+      break $ 2 - nTaper
+    return 0
+  let taper = stem^. #sRadius * (1 - unitTaper * z1)
+  radius <- callCC $ \ break -> do
+    when (nTaper < 1) $
+      break taper
+    let z2 = (1 - z1) * (stem^. #sLength)
+        depth = if (nTaper < 2 || z2 < taper) then 1 else nTaper - 2
+        z3 = if nTaper < 2 then z2 else abs $ z2 - 2 * taper *
+                                        (fromIntegral . truncate) (z2 / (2 * taper) + 0.5)
+    when (nTaper < 2 && z3 >= taper) $
+      break taper
+    return $ (1 - depth) * taper + depth * sqrt ((taper ^ 2) - ((z3 - taper) ^ 2))
+  if stem^. #sDepth == 0
+    then let yVal = max 0 (1 - 8 * z1)
+             flare = pFlare * (100 ** yVal) / 100 + 1
+         in  return $ radius * flare
+    else return radius
