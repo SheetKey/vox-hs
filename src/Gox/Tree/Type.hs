@@ -223,3 +223,7 @@ runTinMS :: T g a a -> MS g r a
 runTinMS f = C $ \ k -> \ p g MakeStem {..} ->
   let ~(r, Tree {..}, g') = (evalC f) p g Tree {..}
   in k r p g' MakeStem {..}
+
+-- remove when undating to version 2.3.1 of mtl
+label :: MonadCont m => a -> m (a -> m b, a)
+label a = callCC $ \ k -> let go b = k (go, b) in return (go, a)

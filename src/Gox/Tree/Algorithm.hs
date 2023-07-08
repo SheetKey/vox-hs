@@ -23,6 +23,7 @@ import Optics.Core
 -- optics-extra
 import Optics.State
 import Optics.State.Operators
+import Optics.At
 
 -- mtl
 import Control.Monad.State.Class
@@ -144,10 +145,17 @@ calcShapeRatio shape ratio =
                    else return $ ((1 - ratio) / (1 - pPruneWidthPeak)) ** pPrunePowerLow
     Conical -> return $ 0.2 + 0.8 * ratio
       
-getParent :: Stem -> T g r Stem
-getParent stem = do
+getParentT :: Stem -> T g r Stem
+getParentT stem = do
   stems <- use #tStems
   let Just parentIdx = stem^. #sParent
+  return $ stems V.! parentIdx
+
+getParent :: MS g r Stem
+getParent = do
+  p <- use #sParent
+  let Just parentIdx = p
+  stems <- use #tStems
   return $ stems V.! parentIdx
 
 calcStemLength :: RandomGen g => Stem -> T g r Double
@@ -160,12 +168,12 @@ calcStemLength stem = do
       res <- #tTrunkLength <.= (treeScale * ((pLength V.! 0) + r * (pLengthV V.! 0)))
       break res
     when (stem^. #sDepth == 1) $ do
-      parent <- getParent stem
+      parent <- getParentT stem
       baseLength <- use #tBaseLength
       shapeRatio <- calcShapeRatio pShape $
         (parent^. #sLength - stem^. #sOffset) / (parent^. #sLength - baseLength)
       break $ (parent^. #sLength) * (parent^. #sLengthChildMax) * shapeRatio
-    parent <- getParent stem
+    parent <- getParentT stem
     return $ (parent^. #sLengthChildMax) * (parent^. #sLength - 0.7 * stem^. #sOffset)
   return $ max 0 result
 
@@ -175,7 +183,7 @@ calcStemRadius stem = do
   let d = stem^. #sDepth
   if d == 0
     then return $ (stem^. #sLength) * pRatio * (pRadiusMod V.! 0)
-    else do parent <- getParent stem
+    else do parent <- getParentT stem
             return $ min (stem^. #sRadiusLimit) $ max 0.005 $
               (pRadiusMod V.! d) * (parent^. #sRadius) *
               ((stem^. #sLength / parent^. #sLength) ** pRatioPower)
@@ -196,15 +204,15 @@ calcCurveAngle depth segInd = do
   r <- getRandomR (-1, 1)
   return $ curveAngle + r * (curveV / curveRes)
 
-calcDownAngle :: RandomGen g => Stem -> Double -> MS g r Double
-calcDownAngle stem stemOffset = do
+calcDownAngle :: RandomGen g => Double -> MS g r Double
+calcDownAngle stemOffset = do
   Parameters {..} <- ask
-  let depth = stem^. #sDepth
-      dp1 = min (depth + 1) pLevels
+  depth <- use #sDepth
+  let dp1 = min (depth + 1) pLevels
   if pDownAngleV V.! dp1 >= 0
     then do r <- getRandomR (-1, 1)
             return $ (pDownAngle V.! dp1) + r * (pDownAngleV V.! dp1)
-    else do let length = stem^. #sLength
+    else do length <- use #sLength
             shapeRatio <- runTinMS $ calcShapeRatio Spherical $
                           (length - stemOffset) / (length * (1 - pBaseSize V.! depth))
             let dAngle = (pDownAngle V.! dp1) + (pDownAngleV V.! dp1) * (1 - 2 * shapeRatio)
@@ -220,20 +228,21 @@ calcRotateAngle depth prevAngle = do
     else do r <- getRandomR (-1, 1)
             return $ prevAngle * (pi + (pRotate V.! depth) + r * (pRotateV V.! depth))
 
-calcLeafCount :: Stem -> MS g r Double
-calcLeafCount stem = do
+calcLeafCount :: MS g r Double
+calcLeafCount = do
   Parameters {..} <- ask
   if pLeafBlosNum >= 0
     then do treeScale <- use #tTreeScale
             let leaves = fromIntegral pLeafBlosNum * treeScale / pGScale
-            parent <- runTinMS $ getParent stem
-            return $ leaves * (stem^. #sLength / (parent^. #sLengthChildMax * parent^. #sLength))
+            parent <- getParent
+            length <- use #sLength
+            return $ leaves * (length / (parent^. #sLengthChildMax * parent^. #sLength))
     else return $ fromIntegral pLeafBlosNum
 
-calcBranchCount :: RandomGen g => Stem -> MS g r Double
-calcBranchCount stem = do
+calcBranchCount :: RandomGen g => MS g r Double
+calcBranchCount = do
   Parameters {..} <- ask
-  let depth = stem^. #sDepth
+  depth <- use #sDepth
   result <- callCC $ \ break -> do
     let dp1 = min depth pLevels
         branches = fromIntegral $ pBranches V.! dp1
@@ -242,36 +251,75 @@ calcBranchCount stem = do
       break $ branches * (r * 0.2 + 0.9)
     when (branches < 0) $
       break branches
-    parent <- runTinMS $ getParent stem
+    parent <- getParent
     when (depth == 1) $ do
+      length <- use #sLength
       break $ branches *
-        (0.2 + 0.8 * (stem^. #sLength / parent^. #sLength) / parent^. #sLengthChildMax)
-    return $ branches * (1 - 0.5 * (stem^. #sOffset) / (parent^. #sLength))
+        (0.2 + 0.8 * (length / parent^. #sLength) / parent^. #sLengthChildMax)
+    offset <- use #sOffset
+    return $ branches * (1 - 0.5 * offset / (parent^. #sLength))
   return $ result / (1 - pBaseSize V.! depth)
 
-calcRadiusAtOffset :: Stem -> Double -> MS g r Double
-calcRadiusAtOffset stem z1 = do
+calcRadiusAtOffset :: Double -> MS g r Double
+calcRadiusAtOffset z1 = do
   Parameters {..} <- ask
-  let nTaper = pTaper V.! (stem^. #sDepth)
+  nTaper <- use #sDepth <&> (pTaper V.!)
   unitTaper <- callCC $ \ break -> do
     when (nTaper < 1) $
       break nTaper
     when (nTaper < 2) $
       break $ 2 - nTaper
     return 0
-  let taper = stem^. #sRadius * (1 - unitTaper * z1)
+  taper <- use #sRadius <&> (* (1 - unitTaper * z1))
   radius <- callCC $ \ break -> do
     when (nTaper < 1) $
       break taper
-    let z2 = (1 - z1) * (stem^. #sLength)
+    length <- use #sLength
+    let z2 = (1 - z1) * length
         depth = if (nTaper < 2 || z2 < taper) then 1 else nTaper - 2
         z3 = if nTaper < 2 then z2 else abs $ z2 - 2 * taper *
                                         (fromIntegral . truncate) (z2 / (2 * taper) + 0.5)
     when (nTaper < 2 && z3 >= taper) $
       break taper
     return $ (1 - depth) * taper + depth * sqrt ((taper ^ 2) - ((z3 - taper) ^ 2))
-  if stem^. #sDepth == 0
+  d <- use #sDepth
+  if d == 0
     then let yVal = max 0 (1 - 8 * z1)
              flare = pFlare * (100 ** yVal) / 100 + 1
          in  return $ radius * flare
     else return radius
+
+blankBP :: BezierPoint
+blankBP = BezierPoint (V3 0 0 0) (V3 0 0 0) (V3 0 0 0) 0
+
+increaseBezierPointRes :: Int -> Int -> MS g r ()
+increaseBezierPointRes segInd pointsPerSeg = do
+  when (pointsPerSeg <= 2) $ error "'pointsPerSeg' must be greater than '2'."
+  Parameters {..} <- ask
+  depth <- use #sDepth
+  curve <- use $ #sCurve % #bezierPoints
+  let curveRes = fromIntegral $ pCurveRes V.! depth
+      curveNumPoints = V.length curve
+      segEndPoint = curve V.! (curveNumPoints - 1)
+      segStartPoint = curve V.! (curveNumPoints - 2)
+  (loop, k) <- label (0 :: Int)
+  when (k < pointsPerSeg) $ do
+    let offset = fromIntegral k / (fromIntegral pointsPerSeg - 1)
+    -- increase the size of the curve vector if needed
+    when (k > 1) $ 
+      #sCurve % #bezierPoints %= (`V.snoc` blankBP)
+    -- set values of new bp point
+    when (k == pointsPerSeg - 1) $
+      #sCurve % #bezierPoints % (ix $ curveNumPoints - 2 + k) .= segEndPoint
+    when (0 < k && k < pointsPerSeg - 1) $ do
+      let co = calcPointOnBezier offset segStartPoint segEndPoint
+          tangent = normalize $ calcTangentToBezier offset segStartPoint segEndPoint
+          dirVecMag = norm $ segEndPoint^. #bpHandleLeft - segStartPoint^. #bpControl
+          hl = co - tangent ^* dirVecMag
+          hr = co + tangent ^* dirVecMag
+      #sCurve % #bezierPoints % (ix $ curveNumPoints - 2 + k) .= (BezierPoint co hl hr 0)
+    -- set radius of new bp point
+    radiusAtOffset <- calcRadiusAtOffset $ (offset + fromIntegral segInd - 1) / curveRes
+    #sCurve % #bezierPoints % (ix $ curveNumPoints - 2 + k) % #bpRadius .= radiusAtOffset
+    -- loop
+    loop (k + 1)
