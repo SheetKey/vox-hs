@@ -9,6 +9,7 @@ import Gox.Tree.Type
 
 -- base
 import Data.Maybe (fromJust)
+import Data.Fixed (mod')
 
 -- linear
 import Linear
@@ -194,3 +195,56 @@ calcCurveAngle depth segInd = do
     return $ curveBack / (curveRes / 2)
   r <- getRandomR (-1, 1)
   return $ curveAngle + r * (curveV / curveRes)
+
+calcDownAngle :: RandomGen g => Stem -> Double -> MS g r Double
+calcDownAngle stem stemOffset = do
+  Parameters {..} <- ask
+  let depth = stem^. #sDepth
+      dp1 = min (depth + 1) pLevels
+  if pDownAngleV V.! dp1 >= 0
+    then do r <- getRandomR (-1, 1)
+            return $ (pDownAngle V.! dp1) + r * (pDownAngleV V.! dp1)
+    else do let length = stem^. #sLength
+            shapeRatio <- runTinMS $ calcShapeRatio Spherical $
+                          (length - stemOffset) / (length * (1 - pBaseSize V.! depth))
+            let dAngle = (pDownAngle V.! dp1) + (pDownAngleV V.! dp1) * (1 - 2 * shapeRatio)
+            r <- getRandomR (-1, 1)
+            return $ dAngle + r * abs (dAngle * 0.1)
+
+calcRotateAngle :: RandomGen g => Int -> Double -> MS g r Double
+calcRotateAngle depth prevAngle = do
+  Parameters {..} <- ask
+  if pRotate V.! depth >= 0
+    then do r <- getRandomR (-1, 1)
+            return $ mod' (prevAngle + (pRotate V.! depth) + r * (pRotateV V.! depth)) (2 * pi)
+    else do r <- getRandomR (-1, 1)
+            return $ prevAngle * (pi + (pRotate V.! depth) + r * (pRotateV V.! depth))
+
+calcLeafCount :: Stem -> MS g r Double
+calcLeafCount stem = do
+  Parameters {..} <- ask
+  if pLeafBlosNum >= 0
+    then do treeScale <- use #tTreeScale
+            let leaves = fromIntegral pLeafBlosNum * treeScale / pGScale
+            parent <- runTinMS $ getParent stem
+            return $ leaves * (stem^. #sLength / (parent^. #sLengthChildMax * parent^. #sLength))
+    else return $ fromIntegral pLeafBlosNum
+
+calcBranchCount :: RandomGen g => Stem -> MS g r Double
+calcBranchCount stem = do
+  Parameters {..} <- ask
+  let depth = stem^. #sDepth
+  result <- callCC $ \ break -> do
+    let dp1 = min depth pLevels
+        branches = fromIntegral $ pBranches V.! dp1
+    when (depth == 0) $ do
+      r <- getRandomR (0, 1)
+      break $ branches * (r * 0.2 + 0.9)
+    when (branches < 0) $
+      break branches
+    parent <- runTinMS $ getParent stem
+    when (depth == 1) $ do
+      break $ branches *
+        (0.2 + 0.8 * (stem^. #sLength / parent^. #sLength) / parent^. #sLengthChildMax)
+    return $ branches * (1 - 0.5 * (stem^. #sOffset) / (parent^. #sLength))
+  return $ result / (1 - pBaseSize V.! depth)
