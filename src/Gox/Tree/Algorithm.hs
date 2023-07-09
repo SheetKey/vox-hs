@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 
 module Gox.Tree.Algorithm where
 
@@ -323,3 +324,103 @@ increaseBezierPointRes segInd pointsPerSeg = do
     #sCurve % #bezierPoints % (ix $ curveNumPoints - 2 + k) % #bpRadius .= radiusAtOffset
     -- loop
     loop (k + 1)
+
+pointInside :: V3 Double -> T g r Bool
+pointInside (V3 x y z) = do
+  Parameters {..} <- ask
+  treeScale <- use #tTreeScale
+  let dist = sqrt $ (x ^ 2) + (y ^ 2)
+      ratio = (treeScale - z) / (treeScale * (1 - (pBaseSize V.! 0)))
+  shapeRatio <- calcShapeRatio Envelope ratio
+  return $ (dist / treeScale) < (pPruneWidth * shapeRatio)
+
+makeBranchPosTurtle :: Turtle -> Double -> BezierPoint -> BezierPoint -> Double -> (Turtle, Turtle)
+makeBranchPosTurtle dirTurtle offset startPoint endPoint radiusLimit =
+  let pos = calcPointOnBezier offset startPoint endPoint
+      dirTurtle' = dirTurtle { turtlePos = pos }
+      branchPosTurtle = move radiusLimit $ pitchDown (pi / 2) dirTurtle'
+  in (dirTurtle', branchPosTurtle)
+
+makeBranchDirTurtle :: Turtle -> Bool -> Double -> BezierPoint -> BezierPoint -> Turtle
+makeBranchDirTurtle turtle isHelix offset startPoint endPoint =
+  let tangent = normalize $ calcTangentToBezier offset startPoint endPoint
+      right = if isHelix
+              then let tanD = normalize $ calcTangentToBezier (offset + 0.0001) startPoint endPoint
+                   in tangent `cross` tanD
+              else (turtleDir turtle `cross` turtleRight turtle) `cross` tangent
+  in Turtle tangent (V3 0 0 0) right
+
+applyTropism :: Turtle -> V3 Double -> Turtle
+applyTropism turtle tropismVector =
+  let hcrosst = turtleDir turtle `cross` tropismVector
+      alpha = pi * (10 * norm hcrosst) / 180
+      nhcrosst = normalize hcrosst
+      dir = normalize $ rotate (axisAngle nhcrosst alpha) (turtleDir turtle)
+      right = normalize $ rotate (axisAngle nhcrosst alpha) (turtleRight turtle)
+  in turtle { turtleDir = dir, turtleRight = right }
+
+scaleBezierHandlesForFlare :: Int -> MS g r ()
+scaleBezierHandlesForFlare maxPointsPerSeg = do
+  #sCurve % #bezierPoints % traversed %=
+    (\ BezierPoint {..} -> BezierPoint
+      { bpHandleLeft = bpControl
+        + (bpHandleLeft - bpControl) ^/ fromIntegral maxPointsPerSeg
+      , bpHandleRight = bpControl
+        + (bpHandleRight - bpControl) ^/ fromIntegral maxPointsPerSeg })
+
+pointsForFloorSplit :: RandomGen g => T g r (V.Vector (V3 Double, Double))
+pointsForFloorSplit = do
+  Parameters {..} <- ask
+  #tTreeScale .= pGScale + pGScaleV
+  let dummyStem = stemFromDepth 0
+      branches = pBranches V.! 0
+  l <- calcStemLength dummyStem
+  rad <- calcStemRadius (dummyStem & #sLength .~ l) <&> (2.5 *)
+  (loop, (points, k)) <- label (V.empty, 0 :: Int)
+  when (k < branches) $ do
+    r <- getRandomR (0, 1)
+    let dis = sqrt $ r * (fromIntegral branches) / 2.5 * pGScale * pRatio
+    theta <- getRandomR (0, 2 * pi)
+    let pos = V3 (dis * cos theta) (dis * sin theta) 0
+    if V.all (\(p, _) -> norm (pos - p) < rad) points
+      then loop (points `V.snoc` (pos, theta), k + 1)
+      else loop (points, k)
+  return points
+    
+calcHelixParameters :: RandomGen g => MS g r (V3 Double, V3 Double, V3 Double, V3 Double)
+calcHelixParameters = do
+  Parameters {..} <- ask
+  depth <- use #sDepth
+  length <- use #sLength
+  r1 <- getRandomR (0.8, 1.2)
+  r2 <- getRandomR (0.8, 1.2)
+  let tanAng = tan $ (pi / 2) - abs (pCurveV V.! depth)
+      helPitch = 2 * length / (fromIntegral $ pCurveRes V.! depth) * r1
+      helRadius = 3 * helPitch / (16 * tanAng) * r2
+  if depth > 1
+    then #turtle %= (`applyTropism` pTropism)
+    else #turtle %= (`applyTropism` (V3 (pTropism L.^._x) (pTropism L.^._y) 0))
+  calcHelixPoints helRadius helPitch
+
+testStemHelix :: RandomGen g => MS g r Bool
+testStemHelix = do
+  Parameters {..} <- ask
+  depth <- use #sDepth
+  let dp1 = min (depth + 1) pLevels
+      curveRes = pCurveRes V.! depth
+      segSplits = pSegSplits V.! depth
+      baseSegInd = ceiling $ (pBaseSize V.! 0) * (fromIntegral $ pCurveRes V.! 0)
+  segLength <- use #sLength <&> (/ fromIntegral curveRes) 
+  (_, _, helP2, helAxis) <- calcHelixParameters
+  (loop, (segInd, prevHelPnt)) <- label =<< (, V3 0 0 0) <$> use #start 
+  when (segInd < curveRes + 1) $ do
+    let remainingSegs = curveRes + 1 - segInd
+    when (segInd == 1) $
+      #turtle % #turtlePos %= (+ helP2)
+    when (segInd > 1) $
+      let helP2' = rotate (axisAngle helAxis $ (fromIntegral segInd - 1) * pi) helP2
+      in #turtle % #turtlePos .= (prevHelPnt + helP2')
+    nextPrevHelPnt <- use $ #turtle % #turtlePos
+    loop (segInd + 1, nextPrevHelPnt)
+  pos <- use $ #turtle % #turtlePos
+  runTinMS $ pointInside pos
