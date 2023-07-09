@@ -17,6 +17,7 @@ import Linear
 
 -- lens
 import qualified Control.Lens.Getter as L
+import qualified Control.Lens.Setter as L
 
 -- optics-core
 import Optics.Core
@@ -52,6 +53,9 @@ stemFromDepth sDepth = Stem
   , sLengthChildMax = 0
   , ..
   }
+
+declination :: V3 Double -> Double
+declination (V3 x y z) = atan2 (sqrt $ x * x + y * y) z
 
 saacos :: Double -> Double
 saacos fac =
@@ -350,8 +354,8 @@ makeBranchDirTurtle turtle isHelix offset startPoint endPoint =
               else (turtleDir turtle `cross` turtleRight turtle) `cross` tangent
   in Turtle tangent (V3 0 0 0) right
 
-applyTropism :: Turtle -> V3 Double -> Turtle
-applyTropism turtle tropismVector =
+applyTropism :: V3 Double -> Turtle -> Turtle
+applyTropism tropismVector turtle =
   let hcrosst = turtleDir turtle `cross` tropismVector
       alpha = pi * (10 * norm hcrosst) / 180
       nhcrosst = normalize hcrosst
@@ -398,8 +402,8 @@ calcHelixParameters = do
       helPitch = 2 * length / (fromIntegral $ pCurveRes V.! depth) * r1
       helRadius = 3 * helPitch / (16 * tanAng) * r2
   if depth > 1
-    then #turtle %= (`applyTropism` pTropism)
-    else #turtle %= (`applyTropism` (V3 (pTropism L.^._x) (pTropism L.^._y) 0))
+    then #turtle %= (applyTropism pTropism)
+    else #turtle %= (applyTropism (pTropism & (L..~)_z 0))
   calcHelixPoints helRadius helPitch
 
 testStemHelix :: RandomGen g => MS g r Bool
@@ -424,3 +428,77 @@ testStemHelix = do
     loop (segInd + 1, nextPrevHelPnt)
   pos <- use $ #turtle % #turtlePos
   runTinMS $ pointInside pos
+
+testStemRegular :: RandomGen g => MS g r Bool
+testStemRegular = do
+  Parameters {..} <- ask
+  depth <- use #sDepth
+  let dp1 = min (depth + 1) pLevels
+      curveRes = pCurveRes V.! depth
+      segSplits = pSegSplits V.! depth
+      baseSegInd = ceiling $ (pBaseSize V.! 0) * (fromIntegral $ pCurveRes V.! 0)
+  segLength <- use #sLength <&> (/ fromIntegral curveRes)
+  callCC $ \ break -> do
+    (loop, segInd) <- label =<< use #start
+    when (segInd < curveRes + 1) $ do
+      let remainingSegs = curveRes + 1 - segInd
+      s <- use #start
+      when (segInd > s) $ do
+        #turtle %= (move segLength)
+        tPos <- use (#turtle % #turtlePos)
+        isInside <- runTinMS $ pointInside tPos
+        when (not (depth == 0 && s < baseSegInd) && not isInside) $
+          break False
+        #numOfSplits .= 0
+        when (pBaseSplits > 0 && depth == 0 && segInd == baseSegInd) $ do
+          r <- getRandomR (0 :: Double, 1)
+          #numOfSplits .= (truncate $ r * (fromIntegral pBaseSplits + 0.5))
+        when (segSplits > 0 && segInd < curveRes && (depth > 0 || segInd > baseSegInd)) $ do
+          r <- getRandomR (0, 1)
+          cp <- use #cloneProb
+          when (r <= cp) $ do
+            splitNumError <- use #tSplitNumError
+            nos <- #numOfSplits <.= (truncate $ segSplits + splitNumError V.! depth)
+            #tSplitNumError % (ix depth) %= (flip (-) $ (fromIntegral nos) - segSplits)
+            #cloneProb %= (/ (fromIntegral nos + 1))
+        nos <- use #numOfSplits
+        if nos > 0
+          then do let isBaseSplit = pBaseSplits > 0 && depth == 0 && segInd == baseSegInd
+                      usingDirectSplit = pSplitAngle V.! depth < 0
+                  if usingDirectSplit
+                    then do r <- getRandomR (-1, 1)
+                            #sprAngle .= abs ((pSplitAngle V.! depth)
+                                              + r * (pSplitAngleV V.! depth))
+                            #splAngle .= 0
+                            #splitCorrAngle .= 0
+                    else do dec <- use (#turtle % #turtleDir) <&> declination
+                            r <- getRandomR (-1, 1)
+                            spl <- #splAngle <.= max 0 ((pSplitAngle V.! depth)
+                                                        + r * (pSplitAngleV V.! depth) - dec)
+                            #splitCorrAngle .= spl / fromIntegral remainingSegs
+                            r2 <- getRandomR (0, 1)
+                            #sprAngle .= negate
+                              ((pi / 9) + 0.75 * ((pi / 6) + abs(dec - (pi / 2)) * (r2 ^ 2)))
+                  spl <- use #splAngle
+                  #turtle %= (pitchDown (spl / 2))
+                  when (not isBaseSplit && nos == 1) $ 
+                    if usingDirectSplit
+                    then do spr <- use #sprAngle
+                            #turtle %= (turnLeft (spr / 2))
+                    else do spr <- use #sprAngle
+                            #turtle % #turtleDir %=
+                              (normalize . (rotate (axisAngle (V3 0 0 1) (negate spr / 2))))
+                            #turtle % #turtleRight %=
+                              (normalize . (rotate (axisAngle (V3 0 0 1) (negate spr / 2))))
+          else do r <- getRandomR (-1, 1)
+                  #turtle %= turnLeft (r * (pBendV V.! depth) / fromIntegral curveRes)
+                  curveAngle <- calcCurveAngle depth segInd
+                  sca <- use #splitCorrAngle
+                  #turtle %= pitchDown (curveAngle - sca)
+        if depth > 1
+          then #turtle %= applyTropism pTropism
+          else #turtle %= applyTropism (pTropism & (L..~)_z 0)
+      loop (segInd + 1)
+    tPos <- use (#turtle % #turtlePos)
+    runTinMS $ pointInside tPos
+        
