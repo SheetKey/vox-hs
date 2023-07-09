@@ -150,6 +150,9 @@ data MakeStem = MakeStem
   , cloneProb :: Double
   , possCorrTurtle :: Maybe Turtle
   , clonedTurtle :: Maybe Turtle
+  , numOfSplits :: Int
+  , splAngle :: Double
+  , sprAngle :: Double
   }
   deriving (Show, Generic)
 
