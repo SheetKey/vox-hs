@@ -502,3 +502,62 @@ testStemRegular = do
     tPos <- use (#turtle % #turtlePos)
     runTinMS $ pointInside tPos
         
+testStem :: RandomGen g => MS g r Bool
+testStem = do
+  Parameters {..} <- ask
+  depth <- use #sDepth
+  if pCurveV V.! depth < 0
+    then testStemHelix
+    else testStemRegular
+
+setUpBranch :: RandomGen g => BranchMode -> Double -> BezierPoint -> BezierPoint ->Double
+  -> Int -> Int -> MS g r (Turtle, Turtle, Double, Double)
+setUpBranch branchMode offset startPoint endPoint stemOffset branchInd branchesInGroup
+  = do
+  Parameters {..} <- ask
+  depth <- use #sDepth
+  turt <- use #turtle
+  let dp1 = min pLevels (depth + 1)
+      bdt = makeBranchDirTurtle turt (pCurveV V.! depth < 0) offset startPoint endPoint
+  (radiusLimit, branchDirTurtle) <- case branchMode of
+    Fan -> do tAngle <- if branchesInGroup == 1
+                then return 0
+                else do r <- getRandomR (-1, 1)
+                        return $ ((pRotate V.! dp1) *
+                                  ((fromIntegral branchInd / (fromIntegral branchesInGroup - 1))
+                                   - 1 / 2)) + r * (pRotateV V.! dp1)
+              return (0, turnRight tAngle bdt)
+    Whorled -> do r <- getRandomR (-1, 1)
+                  pra <- use #prevRotAngle
+                  let rAngle = pra +
+                        (2 * pi * fromIntegral branchInd / fromIntegral branchesInGroup)
+                        + r  * (pRotateV V.! dp1)
+                  l <- use #sLength
+                  rl <- calcRadiusAtOffset $ stemOffset / l
+                  return (rl, rollRight rAngle bdt)
+    AltOpp -> do pra <- use #prevRotAngle
+                 rAngle <- calcRotateAngle dp1 pra
+                 if (pRotate V.! dp1) >= 0
+                   then #prevRotAngle .= rAngle
+                   else #prevRotAngle .= negate pra
+                 l <- use #sLength
+                 rl <- calcRadiusAtOffset $ stemOffset / l
+                 return (rl, rollRight rAngle bdt)
+  let (dirTurtle, posTurtle) = makeBranchPosTurtle
+                               branchDirTurtle offset startPoint endPoint radiusLimit
+  dAngle <- calcDownAngle stemOffset
+  return (posTurtle, pitchDown dAngle dirTurtle, radiusLimit, stemOffset)
+
+makeBranches :: RandomGen g => Int -> Int -> Bool -> MS g r ()
+makeBranches segInd branchesOnSeg isLeaves = do
+  Parameters {..} <- ask
+  curve <- use #sCurve
+  let curveNumPoints = V.length curve
+      segEndPoint = curve V.! (curveNumPoints - 1)
+      segStartPoint = curve V.! (curveNumPoints - 2)
+      dp1 = min (depth + 1) pLevels
+  if branchesOnSeg < 0 -- fan branches
+    then do (loop, branchInd) <- label (0 :: Int)
+            when (branchInd < abs branchesOnSeg) $ do
+              
+              loop (branchInd + 1)
