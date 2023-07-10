@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -20,6 +22,7 @@ import Optics.Lens
 -- mtl
 import Control.Monad.State.Class
 import Control.Monad.Reader.Class
+import Control.Monad.Cont 
 import Control.Monad.Cont.Class
 
 -- linear
@@ -30,6 +33,11 @@ import qualified Data.Vector as V
 
 -- MonadRandom
 import Control.Monad.Random.Lazy
+
+-- containers
+import qualified Data.Map.Strict as M
+
+data BranchMode = Fan | Whorled | AltOpp
 
 data PShape = Spherical
             | Hemispherical
@@ -125,108 +133,131 @@ data Tree = Tree
   }
   deriving (Show, Generic)
 
-data MakeStem = MakeStem
-  { tLeavesArray    :: Maybe (V.Vector Leaf)
-  , tStemIndex      :: Int
-  , tTreeScale      :: Double
-  , tBranchCurves   :: V.Vector Curve
-  , tBaseLength     :: Double
-  , tSplitNumError  :: V.Vector Double
-  , tTrunkLength    :: Double
-  , tStems          :: V.Vector Stem
-  , sDepth          :: Int
-  , sCurve          :: Curve
-  , sParent         :: Maybe Int
-  , sOffset         :: Double
-  , sRadiusLimit    :: Double
-  , sChildren       :: [Int]
-  , sLength         :: Double
-  , sRadius         :: Double
-  , sLengthChildMax :: Double
-  , turtle          :: Turtle
-  , start           :: Int
-  , splitCorrAngle  :: Double
-  , numBranchesFactor :: Double
-  , cloneProb :: Double
-  , possCorrTurtle :: Maybe Turtle
-  , clonedTurtle :: Maybe Turtle
-  , numOfSplits :: Int
-  , splAngle :: Double
-  , sprAngle :: Double
+class Wrappable a where
+  getWType :: a -> WType a
+
+instance Wrappable Double where
+  getWType _ = WTypeDouble
+
+data WType a where
+  WTypeDouble :: WType Double
+  
+data Wrapper where
+  Wrap :: Wrappable a => WType a -> a -> Wrapper
+
+unwrapDouble :: Wrapper -> Double
+unwrapDouble (Wrap wtype a) =
+  case wtype of
+    WTypeDouble -> a
+    _ -> error "expected 'WTypeDouble'."
+
+newtype M g a = M
+  { runM
+    :: Parameters
+    -> g
+    -> M.Map String Wrapper
+    -> (a, M.Map String Wrapper, g)
   }
-  deriving (Show, Generic)
 
-type M g s a = Parameters -> g -> s -> (a, s, g)
-                                            
-newtype C g s r a = C { runC :: (a -> M g s r) -> M g s r }
-
-instance Functor (C g s r) where
-  fmap f m = C $ \ c -> runC m (c . f)
+instance Functor (M g) where
+  fmap f m = M $ \ p g sm ->
+    let ~(a, sm', g') = runM m p g sm
+    in (f a, sm', g')
   {-# INLINE fmap #-}
 
-instance Applicative (C g s r) where
-  pure x = C ($ x)
+instance Applicative (M g) where
+  pure a = M $ \ _ g sm -> (a, sm, g)
   {-# INLINE pure #-}
-  f <*> v = C $ \ c -> runC f $ \ g -> runC v (c . g)
+  mf <*> mv = M $ \ p g sm ->
+    let ~(f, sm', g') = runM mf p g sm
+        ~(v, sm'', g'') = runM mv p g' sm'
+    in (f v, sm'', g'')
   {-# INLINE (<*>) #-}
-  m *> k = m >>= \_ -> k
-  {-# INLINE (*>) #-}
 
-instance Monad (C g s r) where
-  m >>= k = C $ \ c -> runC m (\ x -> runC (k x) c)
+instance Monad (M g) where
+  m >>= f = M $ \ p g sm ->
+    let ~(a, sm', g') = runM m p g sm
+        ~(b, sm'', g'') = runM (f a) p g' sm'
+    in (b, sm'', g'')
   {-# INLINE (>>=) #-}
 
-instance MonadCont (C g s r) where
-  callCC f = C $ \ c -> runC (f (\ x -> C $ \ _ -> c x)) c
-  {-# INLINE callCC #-}
+instance RandomGen g => MonadRandom (M g) where
+  getRandomR lohi = M $ \ _ g sm -> let (a, g') = randomR lohi g in (a, sm, g')
+  getRandom = M $ \ _ g sm -> let (a, g') = random g in (a, sm, g')
+  getRandomRs lohi = M $ \ _ g sm ->
+                           let (as, g') = (first (randomRs lohi) . split) g
+                           in (as, sm, g')
+  getRandoms = M $ \ _ g sm ->
+                     let (as, g') = (first randoms . split) g
+                     in (as, sm, g')
 
-evalC :: C g s r r -> M g s r
-evalC m = runC m (\ r -> \ _ g s -> (r, s, g))
-{-# INLINE evalC #-}
-
-liftMC :: M g s a -> C g s r a
-liftMC m = C $ \ c -> \ p g s ->
-  let ~(a, s', g') = m p g s
-  in (c a) p g' s'
-{-# INLINE liftMC #-}
-
-instance MonadReader Parameters (C g s r) where
-  ask = liftMC $ \ p g s -> (p, s, g)
+instance MonadReader Parameters (M g) where
+  ask = M $ \ p g sm -> (p, sm, g)
   {-# INLINE ask #-}
-  reader = liftMC . (\ f p g s -> (f p, s, g))
+  reader f = M $ \ p g sm -> (f p, sm, g)
   {-# INLINE reader #-}
-  local f m = C $ \ c -> \ p g s -> (runC m ((\ m' -> m' . (const p)) . c)) (f p) g s
+  local f m = M $ \ p g sm -> runM m (f p) g sm
   {-# INLINE local #-}
 
-instance MonadState s (C g s r) where
-  get = liftMC $ \ _ g s -> (s, s, g)
+instance MonadState (M.Map String Wrapper) (M g) where
+  get = M $ \ _ g sm -> (sm, sm, g)
   {-# INLINE get #-}
-  put = liftMC . (\ s _ g _ -> ((), s, g))
+  put _ = error "'put' is unsafe for monad 'M g' and should not be used."
   {-# INLINE put #-}
-  state = liftMC . (\ f _ g s -> let ~(a, s') = f s in (a, s', g))
+  state f = M $ \ _ g sm -> let ~(a, sm') = f sm in (a, sm', g)
   {-# INLINE state #-}
 
-instance RandomGen g => MonadRandom (C g s r) where
-  getRandomR = liftMC . (\ lohi _ g s -> let ~(a, g') = randomR lohi g in (a, s, g'))
-  {-# INLINE getRandomR #-}
-  getRandom = liftMC $ \ _ g s -> let ~(a, g') = random g in (a, s, g')
-  {-# INLINE getRandom #-}
-  getRandomRs = liftMC . (\ lohi _ g s -> let ~(as, g') = (first (randomRs lohi) . split) g
-                                          in (as, s, g'))
-  {-# INLINE getRandomRs #-}
-  getRandoms = liftMC $ \ _ g s -> let ~(as, g') = (first randoms . split) g
-                                   in (as, s, g')
-  {-# INLINE getRandoms #-}
+type C g r a = ContT r (M g) a
 
-type T g = C g Tree
+evalC :: C g r r -> M g r
+evalC m = runContT m return 
+{-# INLINE evalC #-}
 
-type MS g = C g MakeStem
+_getting :: String -> M.Map String Wrapper -> Wrapper
+_getting str sm = case sm M.!? str of
+  Nothing -> error $ "The current state does not contain a variable of name '" ++ str ++ "'."
+  Just w -> w
+{-# INLINE _getting #-}
 
-runTinMS :: T g a a -> MS g r a
-runTinMS f = C $ \ k -> \ p g MakeStem {..} ->
-  let ~(r, Tree {..}, g') = (evalC f) p g Tree {..}
-  in k r p g' MakeStem {..}
+unwrap :: WType a -> Wrapper -> a
+unwrap WTypeDouble = unwrapDouble
+{-# INLINE unwrap #-}
+
+_getter :: WType a -> String -> M.Map String Wrapper -> a
+_getter w str = unwrap w . _getting str
+{-# INLINE _getter #-}
+
+_setter :: Wrappable a => String -> M.Map String Wrapper -> a -> M.Map String Wrapper
+_setter str sm a = if str `M.member` sm
+  then M.insert str (Wrap (getWType a) a) sm
+  else error $ "The current state does not contain a variable of name '" ++ str ++ "'."
+{-# INLINE _setter #-}
+
+_free :: String -> M g ()
+_free str = M $ \ _ g sm -> if str `M.member` sm
+  then ((), M.delete str sm, g)
+  else error $ "The current state does not contain a variable of name '" ++ str ++ "'."
+{-# INLINE _free #-}
+
+newVar :: Wrappable a => String -> a -> C g r (Lens' (M.Map String Wrapper) a, C g r ())
+newVar str a = do
+  sm <- get
+  if str `M.member` sm
+    then error $ "The current state already contains a variable of name '" ++ str ++ "'."
+    else do modify $ M.insert str (Wrap (getWType a) a) 
+            return
+              ( lens (_getter (getWType a) str) (_setter str)
+              , lift $ _free str
+              )
 
 -- remove when undating to version 2.3.1 of mtl
 label :: MonadCont m => a -> m (a -> m b, a)
 label a = callCC $ \ k -> let go b = k (go, b) in return (go, a)
+
+type TreeL = Lens' (M.Map String Wrapper) Tree
+
+type StemL = Lens' (M.Map String Wrapper) Stem
+
+type DoubleL = Lens' (M.Map String Wrapper) Double
+
+type IntL = Lens' (M.Map String Wrapper) Int
