@@ -258,6 +258,8 @@ type TreeL = Lens' (M.Map String Wrapper) Tree
 
 type StemL = Lens' (M.Map String Wrapper) Stem
 
+type TurtleL = Lens' (M.Map String Wrapper) Turtle
+
 type DoubleL = Lens' (M.Map String Wrapper) Double
 
 type IntL = Lens' (M.Map String Wrapper) Int

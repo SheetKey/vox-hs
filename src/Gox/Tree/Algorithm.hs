@@ -113,11 +113,11 @@ calcTangentToBezier offset startPoint endPoint =
           + 6 * invOffset * offset *^ (hl2 - hr1)
           + 3 * (offset ^ 2) *^ (co2 - hl2)
 
-calcHelixPoints :: RandomGen g => Double -> Double
-  -> MS g r (V3 Double, V3 Double, V3 Double, V3 Double) 
-calcHelixPoints rad pitch = do
+calcHelixPoints :: RandomGen g => TurtleL -> Double -> Double
+  -> C g r (V3 Double, V3 Double, V3 Double, V3 Double) 
+calcHelixPoints turtle rad pitch = do
   spinAng <- getRandomR (0, 2 * pi)
-  dir <- use $ #turtle % #turtleDir
+  dir <- use $ turtle % #turtleDir
   let p0 = V3 0 (negate rad) (negate pitch / 4)
       p1 = V3 (4 * rad/ 3) (negate rad) 0
       p2 = V3 (4 * rad / 3) rad 0
@@ -130,7 +130,7 @@ calcHelixPoints rad pitch = do
       p3' = rotate trf $ rotate rotQuat p3
   return (p1' - p0', p2' - p0', p3' - p0', dir)
 
-calcShapeRatio :: PShape -> Double -> T g r Double
+calcShapeRatio :: PShape -> Double -> C g r Double
 calcShapeRatio shape ratio =
   case shape of
     Spherical -> return $ 0.2 + 0.8 * sin (pi * ratio)
@@ -150,36 +150,32 @@ calcShapeRatio shape ratio =
                    else return $ ((1 - ratio) / (1 - pPruneWidthPeak)) ** pPrunePowerLow
     Conical -> return $ 0.2 + 0.8 * ratio
       
-getParentT :: Stem -> T g r Stem
-getParentT stem = do
-  stems <- use #tStems
-  let Just parentIdx = stem^. #sParent
-  return $ stems V.! parentIdx
-
-getParent :: MS g r Stem
-getParent = do
-  p <- use #sParent
+getParent :: TreeL -> StemL -> C g r Stem
+getParent tree stem = do
+  p <- use $ stem % #sParent
   let Just parentIdx = p
-  stems <- use #tStems
+  stems <- use $ tree % #tStems
   return $ stems V.! parentIdx
 
-calcStemLength :: RandomGen g => Stem -> T g r Double
-calcStemLength stem = do
+calcStemLength :: RandomGen g => TreeL -> StemL -> C g r Double
+calcStemLength tree stem = do
   Parameters {..} <- ask
   result <- callCC $ \ break -> do
-    when (stem^. #sDepth == 0) $ do
+    whenM (use (stem #sDepth) <&> (== 0)) $ do
       r <- getRandomR (-1, 1)
-      treeScale <- use #tTreeScale
-      res <- #tTrunkLength <.= (treeScale * ((pLength V.! 0) + r * (pLengthV V.! 0)))
+      treeScale <- use $ tree % #tTreeScale
+      res <- tree % #tTrunkLength <.= (treeScale * ((pLength V.! 0) + r * (pLengthV V.! 0)))
       break res
-    when (stem^. #sDepth == 1) $ do
-      parent <- getParentT stem
-      baseLength <- use #tBaseLength
+    whenM (use (stem % #sDepth) <&> (== 1)) $ do
+      parent <- getParent tree stem
+      baseLength <- use $ tree % #tBaseLength
+      offset <- use $ stem % #sOffset
       shapeRatio <- calcShapeRatio pShape $
-        (parent^. #sLength - stem^. #sOffset) / (parent^. #sLength - baseLength)
+        (parent^. #sLength - offset) / (parent^. #sLength - baseLength)
       break $ (parent^. #sLength) * (parent^. #sLengthChildMax) * shapeRatio
-    parent <- getParentT stem
-    return $ (parent^. #sLengthChildMax) * (parent^. #sLength - 0.7 * stem^. #sOffset)
+    parent <- getParent tree stem
+    offset <- use $ stem % #sOffset
+    return $ (parent^. #sLengthChildMax) * (parent^. #sLength - 0.7 * offset)
   return $ max 0 result
 
 calcStemRadius :: Stem -> T g r Double
@@ -548,16 +544,16 @@ setUpBranch branchMode offset startPoint endPoint stemOffset branchInd branchesI
   dAngle <- calcDownAngle stemOffset
   return (posTurtle, pitchDown dAngle dirTurtle, radiusLimit, stemOffset)
 
-makeBranches :: RandomGen g => Int -> Int -> Bool -> MS g r ()
-makeBranches segInd branchesOnSeg isLeaves = do
-  Parameters {..} <- ask
-  curve <- use #sCurve
-  let curveNumPoints = V.length curve
-      segEndPoint = curve V.! (curveNumPoints - 1)
-      segStartPoint = curve V.! (curveNumPoints - 2)
-      dp1 = min (depth + 1) pLevels
-  if branchesOnSeg < 0 -- fan branches
-    then do (loop, branchInd) <- label (0 :: Int)
-            when (branchInd < abs branchesOnSeg) $ do
-              
-              loop (branchInd + 1)
+--makeBranches :: RandomGen g => Int -> Int -> Bool -> MS g r ()
+--makeBranches segInd branchesOnSeg isLeaves = do
+--  Parameters {..} <- ask
+--  curve <- use #sCurve
+--  let curveNumPoints = V.length curve
+--      segEndPoint = curve V.! (curveNumPoints - 1)
+--      segStartPoint = curve V.! (curveNumPoints - 2)
+--      dp1 = min (depth + 1) pLevels
+--  if branchesOnSeg < 0 -- fan branches
+--    then do (loop, branchInd) <- label (0 :: Int)
+--            when (branchInd < abs branchesOnSeg) $ do
+--              
+--              loop (branchInd + 1)
