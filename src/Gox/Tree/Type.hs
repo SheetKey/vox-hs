@@ -139,8 +139,24 @@ class Wrappable a where
 instance Wrappable Double where
   getWType _ = WTypeDouble
 
+instance Wrappable Int where
+  getWType _ = WTypeInt
+
+instance Wrappable Stem where
+  getWType _ = WTypeStem
+
+instance Wrappable Tree where
+  getWType _ = WTypeTree
+
+instance Wrappable Turtle where
+  getWType _ = WTypeTurtle
+
 data WType a where
   WTypeDouble :: WType Double
+  WTypeInt    :: WType Int
+  WTypeStem   :: WType Stem
+  WTypeTree   :: WType Tree
+  WTypeTurtle :: WType Turtle
   
 data Wrapper where
   Wrap :: Wrappable a => WType a -> a -> Wrapper
@@ -150,6 +166,30 @@ unwrapDouble (Wrap wtype a) =
   case wtype of
     WTypeDouble -> a
     _ -> error "expected 'WTypeDouble'."
+
+unwrapInt :: Wrapper -> Int
+unwrapInt (Wrap wtype a) =
+  case wtype of
+    WTypeInt -> a
+    _ -> error "expected 'WTypeInt'."
+
+unwrapStem :: Wrapper -> Stem
+unwrapStem (Wrap wtype a) =
+  case wtype of
+    WTypeStem -> a
+    _ -> error "expected 'WTypeStem'."
+
+unwrapTree :: Wrapper -> Tree
+unwrapTree (Wrap wtype a) =
+  case wtype of
+    WTypeTree -> a
+    _ -> error "expected 'WTypeTree'."
+  
+unwrapTurtle :: Wrapper -> Turtle
+unwrapTurtle (Wrap wtype a) =
+  case wtype of
+    WTypeTurtle -> a
+    _ -> error "expected 'WTypeTurtle'."
 
 newtype M g a = M
   { runM
@@ -221,6 +261,10 @@ _getting str sm = case sm M.!? str of
 
 unwrap :: WType a -> Wrapper -> a
 unwrap WTypeDouble = unwrapDouble
+unwrap WTypeInt = unwrapInt
+unwrap WTypeStem = unwrapStem
+unwrap WTypeTree = unwrapTree
+unwrap WTypeTurtle = unwrapTurtle
 {-# INLINE unwrap #-}
 
 _getter :: WType a -> String -> M.Map String Wrapper -> a
@@ -263,3 +307,8 @@ type TurtleL = Lens' (M.Map String Wrapper) Turtle
 type DoubleL = Lens' (M.Map String Wrapper) Double
 
 type IntL = Lens' (M.Map String Wrapper) Int
+
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM mb thing = do
+  b <- mb
+  when b thing 
