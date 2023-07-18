@@ -115,6 +115,7 @@ data Stem = Stem
   , sLength         :: Double
   , sRadius         :: Double
   , sLengthChildMax :: Double
+  , sIndex          :: Int
   }
   deriving (Show, Generic)
 
@@ -125,7 +126,7 @@ data Tree = Tree
   { tLeavesArray   :: Maybe (V.Vector Leaf)
   , tStemIndex     :: Int
   , tTreeScale     :: Double
-  , tBranchCurves  :: V.Vector Curve
+  --, tBranchCurves  :: V.Vector Curve
   , tBaseLength    :: Double
   , tSplitNumError :: V.Vector Double
   , tTrunkLength   :: Double
@@ -151,12 +152,16 @@ instance Wrappable Tree where
 instance Wrappable Turtle where
   getWType _ = WTypeTurtle
 
+instance Wrappable (Turtle, Turtle, Double, Double) where
+  getWType _ = WTypeBA
+
 data WType a where
   WTypeDouble :: WType Double
   WTypeInt    :: WType Int
   WTypeStem   :: WType Stem
   WTypeTree   :: WType Tree
   WTypeTurtle :: WType Turtle
+  WTypeBA     :: WType (Turtle, Turtle, Double, Double)
   
 data Wrapper where
   Wrap :: Wrappable a => WType a -> a -> Wrapper
@@ -190,6 +195,12 @@ unwrapTurtle (Wrap wtype a) =
   case wtype of
     WTypeTurtle -> a
     _ -> error "expected 'WTypeTurtle'."
+
+unwrapBA :: Wrapper -> (Turtle, Turtle, Double, Double)
+unwrapBA (Wrap wtype a) =
+  case wtype of
+    WTypeBA -> a
+    _ -> error "expected 'WTypeBA'."
 
 newtype M g a = M
   { runM
@@ -231,6 +242,12 @@ instance RandomGen g => MonadRandom (M g) where
                      let (as, g') = (first randoms . split) g
                      in (as, sm, g')
 
+getRandomState :: C g r g
+getRandomState = lift $ M $ \ _ g sm -> (g, sm, g)
+
+setRandomState :: g -> C g r ()
+setRandomState g = lift $ M $ \ _ _ sm -> ((), sm, g)
+
 instance MonadReader Parameters (M g) where
   ask = M $ \ p g sm -> (p, sm, g)
   {-# INLINE ask #-}
@@ -265,6 +282,7 @@ unwrap WTypeInt = unwrapInt
 unwrap WTypeStem = unwrapStem
 unwrap WTypeTree = unwrapTree
 unwrap WTypeTurtle = unwrapTurtle
+unwrap WTypeBA = unwrapBA
 {-# INLINE unwrap #-}
 
 _getter :: WType a -> String -> M.Map String Wrapper -> a
@@ -308,7 +326,12 @@ type DoubleL = Lens' (M.Map String Wrapper) Double
 
 type IntL = Lens' (M.Map String Wrapper) Int
 
+type BPL = Lens' (M.Map String Wrapper) BezierPoint
+
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM mb thing = do
   b <- mb
   when b thing 
+
+uses :: (Is k A_Getter, MonadState s m) => Optic' k is s a -> (a -> b) -> m b
+uses o f = gets (f . view o)
