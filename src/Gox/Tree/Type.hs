@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -18,6 +19,7 @@ import GHC.Generics (Generic)
 -- optics-core
 import Optics.Optic
 import Optics.Lens
+import Optics.Getter
 
 -- mtl
 import Control.Monad.State.Class
@@ -152,7 +154,7 @@ instance Wrappable Tree where
 instance Wrappable Turtle where
   getWType _ = WTypeTurtle
 
-instance Wrappable (Turtle, Turtle, Double, Double) where
+instance Wrappable (V.Vector (Turtle, Turtle, Double, Double)) where
   getWType _ = WTypeBA
 
 data WType a where
@@ -161,7 +163,7 @@ data WType a where
   WTypeStem   :: WType Stem
   WTypeTree   :: WType Tree
   WTypeTurtle :: WType Turtle
-  WTypeBA     :: WType (Turtle, Turtle, Double, Double)
+  WTypeBA     :: WType (V.Vector (Turtle, Turtle, Double, Double))
   
 data Wrapper where
   Wrap :: Wrappable a => WType a -> a -> Wrapper
@@ -196,7 +198,7 @@ unwrapTurtle (Wrap wtype a) =
     WTypeTurtle -> a
     _ -> error "expected 'WTypeTurtle'."
 
-unwrapBA :: Wrapper -> (Turtle, Turtle, Double, Double)
+unwrapBA :: Wrapper -> V.Vector (Turtle, Turtle, Double, Double)
 unwrapBA (Wrap wtype a) =
   case wtype of
     WTypeBA -> a
@@ -335,3 +337,9 @@ whenM mb thing = do
 
 uses :: (Is k A_Getter, MonadState s m) => Optic' k is s a -> (a -> b) -> m b
 uses o f = gets (f . view o)
+
+unsafeVectorLens :: Int -> Lens' (V.Vector a) a
+unsafeVectorLens i = lens g s
+  where
+    g v = v V.! i
+    s v a = v V.// [(i, a)]
