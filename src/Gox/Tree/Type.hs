@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Gox.Tree.Type where
@@ -20,6 +21,7 @@ import GHC.Generics (Generic)
 import Optics.Optic
 import Optics.Lens
 import Optics.Getter
+import Optics.State.Operators
 
 -- mtl
 import Control.Monad.State.Class
@@ -126,7 +128,7 @@ data Leaf = Leaf
 
 data Tree = Tree
   { tLeavesArray   :: Maybe (V.Vector Leaf)
-  , tStemIndex     :: Int
+  --, tStemIndex     :: Int
   , tTreeScale     :: Double
   --, tBranchCurves  :: V.Vector Curve
   , tBaseLength    :: Double
@@ -313,6 +315,12 @@ newVar str a = do
               ( lens (_getter (getWType a) str) (_setter str)
               , lift $ _free str
               )
+
+newStemVar :: TreeL -> Stem -> C g r StemL
+newStemVar tree stem = do
+  tree % #tStems %= (`V.snoc` stem)
+  l <- uses (tree % #tStems) V.length
+  return $ tree % #tStems % (unsafeVectorLens $ l-1)
 
 -- remove when undating to version 2.3.1 of mtl
 label :: MonadCont m => a -> m (a -> m b, a)

@@ -607,6 +607,7 @@ makeBranches tree stem turtle segInd branchesOnSeg prevRotAngle isLeaves = do
                             loopB (branchInd + 1)
                         prevRotAngle %= (+ (pRotate V.! dp1))
                         loop (whorlNum + 1)
+                      freeBranchWhorlError
               else -- alternating or opposite branches
               do (loop, branchInd) <- label (0 :: Int)
                  when (branchInd < branchesOnSeg) $ do
@@ -628,14 +629,17 @@ makeBranches tree stem turtle segInd branchesOnSeg prevRotAngle isLeaves = do
     else do newBranches <- use branchesArray
             freeBranchesArray
             i <- use $ stem % #sIndex
-            V.forM_ newBranches $ \ (posTur, dirTur, rad, bOffset) ->
+            V.forM_ newBranches $ \ (posTur, dirTur, rad, bOffset) -> do
               let s = (stemFromDepth dp1)
                       { sParent = Just i, sOffset = bOffset, sRadiusLimit = rad }
-              in makeStem s dirTur posTur
+              newStem <- newStemVar tree s
+              (newTurt, freeNewTurt) <- newVar "newTurt" dirTur
+              makeStem tree newStem newTurt 0 0 1 1 (Just posTur) Nothing
+              freeNewTurt
               
-makeClones :: RandomGen g => StemL -> TurtleL -> Int -> Double -> Double -> Double -> Int
+makeClones :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Double -> Double -> Double -> Int
   -> Double -> Double -> Bool -> C g r ()
-makeClones stem turtle segInd splitCorrAngle numBranchesFactor cloneProb numOfSplits
+makeClones tree stem turtle segInd splitCorrAngle numBranchesFactor cloneProb numOfSplits
   splAngle sprAngle isBaseSplit = do
   Parameters {..} <- ask
   depth <- use $ stem % #sDepth
@@ -665,19 +669,19 @@ makeClones stem turtle segInd splitCorrAngle numBranchesFactor cloneProb numOfSp
               nTurtle % #turtleRight %= (rotate quat)
               turtle % #turtleRight %= normalize
     s <- use stem
-    (nStem, freeNStem) <- newVar "nStem" s
-    nStem % #sCurve .= (Curve V.empty)
+    newStem <- newStemVar tree s
+    newStem % #sCurve .= (Curve V.empty)
     let cloned = if stemDepth >= 0
                  then Just t
                  else Nothing
-    makeStem nStem nTurtle segInd splitCorrAngle numBranchesFactor cloneProb cloned
+    makeStem tree newStem nTurtle segInd splitCorrAngle numBranchesFactor cloneProb Nothing cloned
     freeNTurtle
-    freeNStem
     loop $ splitIndex + 1
 
 -- calc and set the length and radius for stem (only for non-clones: assumes 'start == 0')
 setupStemLR :: RandomGen g => TreeL -> StemL -> Int -> Int -> C g r ()
 setupStemLR tree stem depth dp1 = do
+  Parameters {..} <- ask
   r <- getRandomR (-1, 1)
   stem % #sLengthChildMax .= ((pLength V.! dp1) + r * (pLengthV V.! dp1))
   l <- calcStemLength tree stem
@@ -687,7 +691,7 @@ setupStemLR tree stem depth dp1 = do
     tree % #tBaseLength .= (l * (pBaseSize V.! 0))
 
 -- corrects the main turtles position if there is a posCorrTurtle
-correctTurtlePos :: StemL -> TurtleL -> Maybe Turtle ->
+correctTurtlePos :: StemL -> TurtleL -> Maybe Turtle -> C g r ()
 correctTurtlePos stem turtle posCorrTurtle = 
   case posCorrTurtle of
     Nothing -> return ()
@@ -699,9 +703,9 @@ correctTurtlePos stem turtle posCorrTurtle =
       turtle % #turtlePos .= (turtlePos newPCT)
 
 -- only for non-clones
-applyPruning :: RandomGen g => TreeL -> StemL -> Int -> Double -> Double -> (() -> C g r a)
-  -> C g r ()
-applyPruning tree stem start splitCorrAngle cloneProb returnEarly = do
+applyPruning :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Double -> Double
+  -> (() -> C g r ()) -> C g r ()
+applyPruning tree stem turtle start splitCorrAngle cloneProb returnEarly = do
   Parameters {..} <- ask
   startLength <- use $ stem % #sLength
   rState <- getRandomState
@@ -734,9 +738,10 @@ applyPruning tree stem start splitCorrAngle cloneProb returnEarly = do
   setRandomState rState
   tree % #tSplitNumError .= splitErrState
 
-leafBranchCounts :: TreeL -> StemL -> Int -> Int -> Int
+leafBranchCounts :: RandomGen g => TreeL -> StemL -> Int -> Int -> Int -> Double
   -> C g r (DoubleL, C g r (), DoubleL, C g r ())
-leafBranchCounts tree stem start depth curveRes = do
+leafBranchCounts tree stem start depth curveRes numBranchesFactor = do
+  Parameters {..} <- ask
   (leafCount, freeLeafCount) <- newVar "leafCount" (0 :: Double)
   (branchCount, freeBranchCount) <- newVar "branchCount" (0 :: Double)
   if depth == pLevels - 1 && depth > 0 && pLeafBlosNum /= 0
@@ -756,11 +761,11 @@ newPrevRotAngle dp1 = do
     else prevRotAngle .= (pi / 180)
   return (prevRotAngle, freePRA)
 
-calcNumOfSplits :: RandomGen g => Int -> Int -> Int -> Int -> Int -> DoubleL -> DoubleL
+calcNumOfSplits :: RandomGen g => TreeL -> Int -> Int -> Int -> Double -> Int -> DoubleL -> DoubleL
   -> DoubleL -> C g r Int
-calcNumOfSplits depth segInd baseSegInd segSplits curveRes cloneProbL numBranchesFactorL branchCount = do
+calcNumOfSplits tree depth segInd baseSegInd segSplits curveRes cloneProbL numBranchesFactorL branchCount = do
   Parameters {..} <- ask
-  numOfSplits <- if abs pBaseSplits > 0 && depth == 0 && segInd == baseSegInd
+  if abs pBaseSplits > 0 && depth == 0 && segInd == baseSegInd
     then if pBaseSplits < 0
          then do r <- getRandomR (0, 1 :: Double)
                  return $ truncate $ r * ((fromIntegral $ abs pBaseSplits) + 0.5)
@@ -769,7 +774,7 @@ calcNumOfSplits depth segInd baseSegInd segSplits curveRes cloneProbL numBranche
          then do r <- getRandomR (0, 1)
                  cp <- use cloneProbL
                  if r <= cp
-                   then do splitNumErr <- uses (tree % #tSplitNumError) (V.! depth)
+                   then do splitNumErr <- use $ tree % #tSplitNumError % (unsafeVectorLens depth)
                            let nos = truncate $ segSplits + splitNumErr
                            tree % #tSplitNumError % (ix depth) %=
                              (\ a -> a - (fromIntegral nos - segSplits))
@@ -785,7 +790,7 @@ calcNumOfSplits depth segInd baseSegInd segSplits curveRes cloneProbL numBranche
          else return 0
 
 addSegBranches :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> DoubleL -> DoubleL
-  -> Double -> C g r ()
+  -> DoubleL -> C g r ()
 addSegBranches tree stem turtle segInd curveRes branchCount branchNumError prevRotAngle = do
   bc <- use branchCount
   branchesOnSeg <- if bc < 0
@@ -802,7 +807,7 @@ addSegBranches tree stem turtle segInd curveRes branchCount branchNumError prevR
     makeBranches tree stem turtle segInd branchesOnSeg prevRotAngle False
 
 addSegLeaves :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> Int -> DoubleL
-  -> DoubleL -> Double -> C g r ()
+  -> DoubleL -> DoubleL -> C g r ()
 addSegLeaves tree stem turtle depth segInd curveRes leafCount leafNumError prevRotAngle = do
   lc <- use leafCount
   when (abs lc > 0 && depth > 0) $ do
@@ -820,16 +825,72 @@ addSegLeaves tree stem turtle depth segInd curveRes leafCount leafNumError prevR
       makeLeaves tree stem turtle segInd leavesOnSeg prevRotAngle
 
 addSegBranchesOrLeaves :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> Int 
-  -> DoubleL -> DoubleL -> DoubleL -> DoubleL -> Double -> C g r ()
-addSegBranchesOrLeaves tree stem turtle depth segInd curveRes branchCount banchNumError
+  -> DoubleL -> DoubleL -> DoubleL -> DoubleL -> DoubleL -> C g r ()
+addSegBranchesOrLeaves tree stem turtle depth segInd curveRes branchCount branchNumError
   leafCount leafNumError prevRotAngle = do
-  Parameters {..} <-
+  Parameters {..} <- ask
   rState <- getRandomState
   bc <- use branchCount
   if abs bc > 0 && depth < pLevels - 1
     then addSegBranches tree stem turtle segInd curveRes branchCount branchNumError prevRotAngle
     else addSegLeaves tree stem turtle depth segInd curveRes leafCount leafNumError prevRotAngle
   setRandomState rState
+
+cloneStemSplits :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> Int -> Int -> Int
+  -> Int -> DoubleL -> DoubleL -> DoubleL -> C g r ()
+cloneStemSplits tree stem turtle depth segInd baseSegInd remainingSegs curveRes numOfSplits splitCorrAngleL numBranchesFactorL cloneProbL = do
+  Parameters {..} <- ask
+  if numOfSplits > 0
+    then do let isBaseSplit = pBaseSplits > 0 && depth == 0 && segInd == baseSegInd
+                usingDirectSplit = (pSplitAngle V.! depth) < 0
+            (sprAngle, freesprAngle) <- newVar "sprAngle" 0
+            (splAngle, freesplAngle) <- newVar "splAngle" 0
+            if usingDirectSplit
+              then do r <- getRandomR (-1, 1)
+                      sprAngle .= abs ((pSplitAngle V.! depth)
+                                        + r * (pSplitAngleV V.! depth))
+                      splitCorrAngleL .= 0
+              else do dec <- use (turtle % #turtleDir) <&> declination
+                      r <- getRandomR (-1, 1)
+                      spl <- splAngle <.= max 0 ((pSplitAngle V.! depth)
+                                                  + r * (pSplitAngleV V.! depth) - dec)
+                      splitCorrAngleL .= spl / fromIntegral remainingSegs
+                      r2 <- getRandomR (0, 1)
+                      sprAngle .= negate
+                        ((pi / 9) + 0.75 * ((pi / 6) + abs(dec - (pi / 2)) * (r2 ^ 2)))
+
+            rState <- getRandomState
+            sca <- use splitCorrAngleL
+            nbf <- use numBranchesFactorL
+            cp <- use cloneProbL
+            spl <- use splAngle
+            spr <- use sprAngle
+            makeClones tree stem turtle segInd sca nbf cp numOfSplits spl spr isBaseSplit
+            setRandomState rState
+            
+            turtle %= (pitchDown (spl / 2))
+
+            when (not isBaseSplit && numOfSplits == 1) $ 
+              if usingDirectSplit
+              then turtle %= (turnRight (spr / 2))
+              else do turtle % #turtleDir %=
+                        (normalize . (rotate (axisAngle (V3 0 0 1) (negate spr / 2))))
+                      turtle % #turtleRight %=
+                        (normalize . (rotate (axisAngle (V3 0 0 1) (negate spr / 2))))
+            freesprAngle
+            freesplAngle
+    else do r <- getRandomR (-1, 1)
+            turtle %= (turnLeft $ r * (pBendV V.! depth) / fromIntegral curveRes)
+            curveAngle <- calcCurveAngle depth segInd
+            sca <- use splitCorrAngleL
+            turtle %= (pitchDown $ curveAngle - sca)
+
+applyStemTropism :: TurtleL -> Int -> C g r ()
+applyStemTropism turtle depth = do
+  Parameters {..} <- ask
+  if depth > 1
+    then turtle %= (applyTropism pTropism)
+    else turtle %= (applyTropism (pTropism & (L..~)_z 0))
 
 makeStemHelix :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Double -> Double -> Double 
   -> Maybe Turtle -> Maybe Turtle -> C g r ()
@@ -1211,6 +1272,7 @@ makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor clonePro
       setRandomState rState
       -- ENDREP: addSegBranchesOrLeaves
 
+      -- REP: cloneStemSplits
       if numOfSplits > 0
         then do let isBaseSplit = pBaseSplits > 0 && depth == 0 && segInd == baseSegInd
                     usingDirectSplit = (pSplitAngle V.! depth) < 0
@@ -1236,7 +1298,7 @@ makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor clonePro
                 cp <- use cloneProbL
                 spl <- use splAngle
                 spr <- use sprAngle
-                makeClones stem turtle segInd sca nbf cp numOfSplits spl spr isBaseSplit
+                makeClones tree stem turtle segInd sca nbf cp numOfSplits spl spr isBaseSplit
                 setRandomState rState
                 
                 turtle %= (pitchDown (spl / 2))
@@ -1255,16 +1317,22 @@ makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor clonePro
                 curveAngle <- calcCurveAngle depth segInd
                 sca <- use splitCorrAngleL
                 turtle %= (pitchDown $ curveAngle - sca)
+      -- ENDREP: cloneStemSplits
 
+      -- REP: applyStemTropism
       if depth > 1
         then turtle %= (applyTropism pTropism)
         else turtle %= (applyTropism (pTropism & (L..~)_z 0))
+      -- ENDREP: applyStemTropism
 
       when (pointsPerSeg > 2) $
         increaseBezierPointRes stem segInd pointsPerSeg
 
     loop $ segInd + 1
 
+  freeCloneProb
+  freeSCA
+  freeNBF
   when (pointsPerSeg > 2) $
     scaleBezierHandlesForFlare stem maxPointsPerSeg
 
@@ -1288,6 +1356,8 @@ getNewestBP stem = do
     error "The curve is empty so it contains no newest bezier point."
   return $ stem % #sCurve % #bezierPoints % (unsafeVectorLens $ l - 1)
 
-makeStem = undefined
+makeStem :: TreeL -> StemL -> TurtleL -> Int -> Double -> Double -> Double -> Maybe Turtle
+  -> Maybe Turtle -> C g r ()
+makeStem tree stem turtle start splitCorrAngle numBranchesFactor cloneProb posCorrTurtle clonedTurtle = undefined
 
 makeLeaves = undefined
