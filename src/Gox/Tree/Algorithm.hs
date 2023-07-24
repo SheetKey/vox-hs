@@ -393,6 +393,14 @@ pointsForFloorSplit tree = do
       then loop (points `V.snoc` (pos, theta), k + 1)
       else loop (points, k)
   return points
+
+treeBasePoints :: RandomGen g => TreeL -> C g r (V.Vector (V3 Double, Double))
+treeBasePoints tree = do
+  Parameters {..} <- ask
+  if pBranches V.! 0 > 0
+    then pointsForFloorSplit tree <&> (traversed % _2 %~ (\ a -> a - (pi / 2)))
+    else do r <- getRandomR (0, 2 * pi)
+            return $ V.singleton (V3 0 0 0, r)
     
 calcHelixParameters :: RandomGen g => StemL -> TurtleL
   -> C g r (V3 Double, V3 Double, V3 Double, V3 Double)
@@ -1091,3 +1099,44 @@ makeStem tree stem turtle start splitCorrAngle numBranchesFactor cloneProb posCo
 makeLeaves :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> DoubleL -> C g r ()
 makeLeaves tree stem turtle segInd leavesOnSeg prevRotAngle =
   makeBranches tree stem turtle segInd leavesOnSeg prevRotAngle True
+
+createBranches :: RandomGen g => TreeL -> C g r ()
+createBranches tree = do
+  Parameters {..} <- ask
+  points <- treeBasePoints tree
+  (loop, ind) <- label (0 :: Int)
+  when (ind < pBranches V.! 0) $ do
+    r <- getRandomR (-1, 1)
+    tree % #tTreeScale .= (pGScale + r * pGScaleV)
+    let (point, angle) = points V.! ind
+    (turtle, freeTurtle) <- newVar "turtle" $ Turtle { turtleDir = V3 0 0 1
+                                                     , turtlePos = point
+                                                     , turtleRight = V3 1 0 0 }
+    turtle %= (rollRight angle)
+    
+    stem <- newStemVar tree $ stemFromDepth 0
+
+    makeStem tree stem turtle 0 0 1 1 Nothing Nothing
+
+    freeTurtle
+
+    loop (ind + 1)
+    
+makeTree :: RandomGen g => Bool -> C g r Tree
+makeTree generateLeaves = do
+  (tree, freeTree) <- newVar "tree" $
+    Tree { tLeavesArray   = Nothing
+         , tTreeScale     = 0
+         , tBaseLength    = 0
+         , tSplitNumError = V.fromList [0, 0, 0, 0, 0, 0, 0]
+         , tTrunkLength   = 0
+         , tStems         = V.empty }
+  createBranches tree
+  when generateLeaves $ undefined
+
+  completeTree <- use tree
+  freeTree
+  return completeTree
+
+constructTree :: Parameters -> Int -> Bool -> Tree
+constructTree p g generateLeaves = evalC (makeTree generateLeaves) p (mkStdGen g)

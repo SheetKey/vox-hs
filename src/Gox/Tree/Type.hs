@@ -22,6 +22,7 @@ import Optics.Optic
 import Optics.Lens
 import Optics.Getter
 import Optics.State.Operators
+import Data.Tuple.Optics
 
 -- mtl
 import Control.Monad.State.Class
@@ -270,8 +271,8 @@ instance MonadState (M.Map String Wrapper) (M g) where
 
 type C g r a = ContT r (M g) a
 
-evalC :: C g r r -> M g r
-evalC m = runContT m return 
+evalC :: C g r r -> Parameters -> g -> r
+evalC m p g = view _1 $ runM (runContT m return) p g M.empty
 {-# INLINE evalC #-}
 
 _getting :: String -> M.Map String Wrapper -> Wrapper
@@ -318,9 +319,9 @@ newVar str a = do
 
 newStemVar :: TreeL -> Stem -> C g r StemL
 newStemVar tree stem = do
-  tree % #tStems %= (`V.snoc` stem)
   l <- uses (tree % #tStems) V.length
-  return $ tree % #tStems % (unsafeVectorLens $ l-1)
+  tree % #tStems %= (`V.snoc` (stem { sIndex = l }))
+  return $ tree % #tStems % (unsafeVectorLens $ l)
 
 -- remove when undating to version 2.3.1 of mtl
 label :: MonadCont m => a -> m (a -> m b, a)
