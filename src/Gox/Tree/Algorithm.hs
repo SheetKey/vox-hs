@@ -72,7 +72,7 @@ mulQtQt (Quaternion q10 (V3 q11 q12 q13)) (Quaternion q20 (V3 q21 q22 q23)) =
 
 toTrackQuatZY :: V3 Double -> Quaternion Double
 toTrackQuatZY v@(V3 x y z) =
-  let axis = if abs x + abs y < (10 ^ (-4))
+  let axis = if abs x + abs y < (10 ^ (-4 :: Int))
              then V3 1 x 0
              else V3 (negate y) x 0
       co = z / 3
@@ -94,10 +94,10 @@ calcPointOnBezier offset startPoint endPoint =
            co2 = bpControl endPoint
            hl2 = bpHandleLeft endPoint
            invOffset = 1 - offset 
-       in (invOffset ^ 3) *^ co1
-          + 3 * (invOffset ^ 2) * offset *^ hr1
-          + 3 * invOffset * (offset ^ 2) *^ hl2
-          + (offset ^ 3) *^ co2
+       in (invOffset ^ (3 :: Int)) *^ co1
+          + 3 * (invOffset ^ (2 :: Int)) * offset *^ hr1
+          + 3 * invOffset * (offset ^ (2 :: Int)) *^ hl2
+          + (offset ^ (3 :: Int)) *^ co2
 
 calcTangentToBezier :: Double -> BezierPoint -> BezierPoint -> V3 Double
 calcTangentToBezier offset startPoint endPoint =
@@ -108,9 +108,9 @@ calcTangentToBezier offset startPoint endPoint =
            co2 = bpControl endPoint
            hl2 = bpHandleLeft endPoint
            invOffset = 1 - offset 
-       in 2 * (invOffset ^ 2) *^ (hr1 - co1)
+       in 2 * (invOffset ^ (2 :: Int)) *^ (hr1 - co1)
           + 6 * invOffset * offset *^ (hl2 - hr1)
-          + 3 * (offset ^ 2) *^ (co2 - hl2)
+          + 3 * (offset ^ (2 :: Int)) *^ (co2 - hl2)
 
 calcHelixPoints :: RandomGen g => TurtleL -> Double -> Double
   -> C g r (V3 Double, V3 Double, V3 Double, V3 Double) 
@@ -280,10 +280,12 @@ calcRadiusAtOffset stem z1 = do
     let z2 = (1 - z1) * length
         depth = if (nTaper < 2 || z2 < taper) then 1 else nTaper - 2
         z3 = if nTaper < 2 then z2 else abs $ z2 - 2 * taper *
-                                        (fromIntegral . truncate) (z2 / (2 * taper) + 0.5)
+                                        ((fromIntegral :: Int -> Double) . truncate)
+                                        (z2 / (2 * taper) + 0.5)
     when (nTaper < 2 && z3 >= taper) $
       break taper
-    return $ (1 - depth) * taper + depth * sqrt ((taper ^ 2) - ((z3 - taper) ^ 2))
+    return $ (1 - depth) * taper + depth *
+      sqrt ((taper ^ (2 :: Int)) - ((z3 - taper) ^ (2 :: Int)))
   d <- use $ stem % #sDepth
   if d == 0
     then let yVal = max 0 (1 - 8 * z1)
@@ -330,7 +332,7 @@ pointInside :: TreeL -> V3 Double -> C g r Bool
 pointInside tree (V3 x y z) = do
   Parameters {..} <- ask
   treeScale <- use $ tree % #tTreeScale
-  let dist = sqrt $ (x ^ 2) + (y ^ 2)
+  let dist = sqrt $ (x ^ (2 :: Int)) + (y ^ (2 :: Int))
       ratio = (treeScale - z) / (treeScale * (1 - (pBaseSize V.! 0)))
   shapeRatio <- calcShapeRatio Envelope ratio
   return $ (dist / treeScale) < (pPruneWidth * shapeRatio)
@@ -770,7 +772,7 @@ addSegBranches tree stem turtle segInd curveRes branchCount branchNumError prevR
   when (abs branchesOnSeg > 0) $
     makeBranches tree stem turtle segInd branchesOnSeg prevRotAngle False
 
-addSegLeaves :: TreeL -> StemL -> TurtleL -> Int -> Int -> Int -> DoubleL
+addSegLeaves :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> Int -> DoubleL
   -> DoubleL -> DoubleL -> C g r ()
 addSegLeaves tree stem turtle depth segInd curveRes leafCount leafNumError prevRotAngle = do
   lc <- use leafCount
@@ -822,7 +824,7 @@ cloneStemSplits tree stem turtle depth segInd baseSegInd remainingSegs curveRes 
                       splitCorrAngleL .= spl / fromIntegral remainingSegs
                       r2 <- getRandomR (0, 1)
                       sprAngle .= negate
-                        ((pi / 9) + 0.75 * ((pi / 6) + abs(dec - (pi / 2)) * (r2 ^ 2)))
+                        ((pi / 9) + 0.75 * ((pi / 6) + abs(dec - (pi / 2)) * (r2 ^ (2 :: Int))))
 
             spl <- use splAngle
             spr <- use sprAngle
@@ -883,7 +885,7 @@ makeStemHelix tree stem turtle start splitCorrAngle numBranchesFactor cloneProb 
   (leafCount, freeLeafCount, branchCount, freeBranchCount) <-
     leafBranchCounts tree stem start depth curveRes numBranchesFactor
             
-  let maxPointsPerSeg = ceiling $ max 1 $ 1 / fromIntegral curveRes
+  let maxPointsPerSeg = (ceiling :: Double -> Int) $ max 1 $ 1 / fromIntegral curveRes
 
   (branchNumError, freeBNE) <- newVar "branchNumError" (0 :: Double)
   (leafNumError, freeLNE) <- newVar "leafNumError" (0 :: Double)
@@ -982,7 +984,7 @@ makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor clonePro
   (leafCount, freeLeafCount, branchCount, freeBranchCount) <-
     leafBranchCounts tree stem start depth curveRes numBranchesFactor
             
-  let maxPointsPerSeg = ceiling $ max 1 $ 1 / fromIntegral curveRes
+  let maxPointsPerSeg = (ceiling :: Double -> Int) $ max 1 $ 1 / fromIntegral curveRes
 
   (branchNumError, freeBNE) <- newVar "branchNumError" (0 :: Double)
   (leafNumError, freeLNE) <- newVar "leafNumError" (0 :: Double)
@@ -1086,4 +1088,6 @@ makeStem tree stem turtle start splitCorrAngle numBranchesFactor cloneProb posCo
     else makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor cloneProb
          posCorrTurtle clonedTurtle
 
-makeLeaves = undefined
+makeLeaves :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> DoubleL -> C g r ()
+makeLeaves tree stem turtle segInd leavesOnSeg prevRotAngle =
+  makeBranches tree stem turtle segInd leavesOnSeg prevRotAngle True
