@@ -85,7 +85,7 @@ toTrackQuatZY v@(V3 x y z) =
       q2 = Quaternion co' (v ^* si')
   in mulQtQt q q2
 
-calcPointOnBezier :: Double -> BezierPoint -> BezierPoint -> V3 Double
+calcPointOnBezier :: Double -> CurvePoint -> CurvePoint -> V3 Double
 calcPointOnBezier offset startPoint endPoint =
   if offset < 0 || offset > 1 then error $ "Expected '0 < offset < 1' but found 'offset = "
                                    ++ show offset ++ "'.'"
@@ -99,7 +99,7 @@ calcPointOnBezier offset startPoint endPoint =
           + 3 * invOffset * (offset ^ (2 :: Int)) *^ hl2
           + (offset ^ (3 :: Int)) *^ co2
 
-calcTangentToBezier :: Double -> BezierPoint -> BezierPoint -> V3 Double
+calcTangentToBezier :: Double -> CurvePoint -> CurvePoint -> V3 Double
 calcTangentToBezier offset startPoint endPoint =
   if offset < 0 || offset > 1 then error $ "Expected '0 < offset < 1' but found 'offset = "
                                    ++ show offset ++ "'.'"
@@ -293,8 +293,8 @@ calcRadiusAtOffset stem z1 = do
          in  return $ radius * flare
     else return radius
 
-blankBP :: BezierPoint
-blankBP = BezierPoint (V3 0 0 0) (V3 0 0 0) (V3 0 0 0) 0
+blankBP :: CurvePoint
+blankBP = CurvePoint (V3 0 0 0) (V3 0 0 0) (V3 0 0 0) 0
 
 increaseBezierPointRes :: StemL -> Int -> Int -> C g r ()
 increaseBezierPointRes stem segInd pointsPerSeg = do
@@ -321,7 +321,7 @@ increaseBezierPointRes stem segInd pointsPerSeg = do
           dirVecMag = norm $ segEndPoint^. #bpHandleLeft - segStartPoint^. #bpControl
           hl = co - tangent ^* dirVecMag
           hr = co + tangent ^* dirVecMag
-      stem % #sCurve % #bezierPoints % (ix $ curveNumPoints - 2 + k) .= (BezierPoint co hl hr 0)
+      stem % #sCurve % #bezierPoints % (ix $ curveNumPoints - 2 + k) .= (CurvePoint co hl hr 0)
     -- set radius of new bp point
     radiusAtOffset <- calcRadiusAtOffset stem $ (offset + fromIntegral segInd - 1) / curveRes
     stem % #sCurve % #bezierPoints % (ix $ curveNumPoints - 2 + k) % #bpRadius .= radiusAtOffset
@@ -337,14 +337,14 @@ pointInside tree (V3 x y z) = do
   shapeRatio <- calcShapeRatio Envelope ratio
   return $ (dist / treeScale) < (pPruneWidth * shapeRatio)
 
-makeBranchPosTurtle :: Turtle -> Double -> BezierPoint -> BezierPoint -> Double -> (Turtle, Turtle)
+makeBranchPosTurtle :: Turtle -> Double -> CurvePoint -> CurvePoint -> Double -> (Turtle, Turtle)
 makeBranchPosTurtle dirTurtle offset startPoint endPoint radiusLimit =
   let pos = calcPointOnBezier offset startPoint endPoint
       dirTurtle' = dirTurtle { turtlePos = pos }
       branchPosTurtle = move radiusLimit $ pitchDown (pi / 2) dirTurtle'
   in (dirTurtle', branchPosTurtle)
 
-makeBranchDirTurtle :: Turtle -> Bool -> Double -> BezierPoint -> BezierPoint -> Turtle
+makeBranchDirTurtle :: Turtle -> Bool -> Double -> CurvePoint -> CurvePoint -> Turtle
 makeBranchDirTurtle turtle isHelix offset startPoint endPoint =
   let tangent = normalize $ calcTangentToBezier offset startPoint endPoint
       right = if isHelix
@@ -365,7 +365,7 @@ applyTropism tropismVector turtle =
 scaleBezierHandlesForFlare :: StemL -> Int -> C g r ()
 scaleBezierHandlesForFlare stem maxPointsPerSeg = do
   stem % #sCurve % #bezierPoints % traversed %=
-    (\ BezierPoint {..} -> BezierPoint
+    (\ CurvePoint {..} -> CurvePoint
       { bpHandleLeft = bpControl
         + (bpHandleLeft - bpControl) ^/ fromIntegral maxPointsPerSeg
       , bpHandleRight = bpControl
@@ -495,8 +495,8 @@ testStem tree stem turtle start splitCorrAngle cloneProb = do
     then testStemHelix tree stem turtle start
     else testStemRegular tree stem turtle start splitCorrAngle cloneProb
 
-setUpBranch :: RandomGen g => StemL -> TurtleL -> BranchMode -> Double -> BezierPoint
-  -> BezierPoint -> Double -> Int -> DoubleL -> Int -> C g r (Turtle, Turtle, Double, Double)
+setUpBranch :: RandomGen g => StemL -> TurtleL -> BranchMode -> Double -> CurvePoint
+  -> CurvePoint -> Double -> Int -> DoubleL -> Int -> C g r (Turtle, Turtle, Double, Double)
 setUpBranch stem turtle branchMode offset startPoint endPoint stemOffset branchInd prevRotAngle branchesInGroup
   = do
   Parameters {..} <- ask
@@ -1064,7 +1064,7 @@ makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor clonePro
   when (pointsPerSeg > 2) $
     scaleBezierHandlesForFlare stem maxPointsPerSeg
 
-prevBP :: StemL -> C g r BezierPoint
+prevBP :: StemL -> C g r CurvePoint
 prevBP stem = do
   l <- uses (stem % #sCurve % #bezierPoints) V.length
   when (l < 2) $

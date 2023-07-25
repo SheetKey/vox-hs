@@ -99,7 +99,7 @@ data Parameters = Parameters
   , pPrunePowerHigh :: Double    -- curvature of the upper section of pruning envelope
   }
 
-data BezierPoint = BezierPoint
+data CurvePoint = CurvePoint
   { bpControl :: V3 Double
   , bpHandleLeft :: V3 Double
   , bpHandleRight :: V3 Double
@@ -107,7 +107,7 @@ data BezierPoint = BezierPoint
   }
   deriving (Show, Generic)
 
-data Curve = Curve { bezierPoints :: V.Vector BezierPoint }
+data Curve = Curve { bezierPoints :: V.Vector CurvePoint }
   deriving (Show, Generic)
 
 data Stem = Stem
@@ -337,7 +337,7 @@ type DoubleL = Lens' (M.Map String Wrapper) Double
 
 type IntL = Lens' (M.Map String Wrapper) Int
 
-type BPL = Lens' (M.Map String Wrapper) BezierPoint
+type BPL = Lens' (M.Map String Wrapper) CurvePoint
 
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM mb thing = do
