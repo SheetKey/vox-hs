@@ -12,7 +12,6 @@ import Gox.Util
 import Gox.Tree.Type
 
 -- base
-import Debug.Trace
 import Control.Applicative (liftA2)
 import Control.Monad (join)
 
@@ -68,7 +67,7 @@ fixInversion :: Matrix Double -> Vector Double -> Vector Double
 fixInversion mat v = if v == vector [0, 0, 0, 0, 0, 0]
                      then let nullmat = nullspace mat
                               (col:_) = toColumns $ nullspace mat
-                          in trace (show nullmat) col
+                          in col
                      else v
 
 mkInversion :: Vector Double -> (V3 Double -> Double)
@@ -334,8 +333,8 @@ instance Shape (TaperedBezierCurve CubicBezier) where
   fullBL16 a =
     let preBL16s = emptyBL16 a
         mat = mkInversionMatrix (taperedBezierCurve a)
-        v = trace (show mat) $ fixInversion mat $ solveInversion mat
-        inversion = trace (show v) $ mkInversion v
+        v = fixInversion mat $ solveInversion mat
+        inversion = mkInversion v
     in flip fmap preBL16s $
        \ (PreBL16 { offset = offset }) ->
          PreBL16
@@ -359,54 +358,3 @@ instance (Bezier a, Shape (f a)) => Shape (V.Vector (f a)) where
 
   drawShape v file = V.foldr' drawShape file v
 
--- old stuff below
-
-getLUT :: Bezier a => Int -> a -> V.Vector BezierPoint
-getLUT steps bezier = V.generate (steps + 1) $ \i ->
-  let t = (fromIntegral i) / (fromIntegral steps)
-  in compute bezier t
-
-closest :: V3 Int -> V.Vector BezierPoint -> (Double, BezierPoint)
-closest p = V.foldl' f (2 ^ 50, (V3 0 0 0, 0))
-  where
-    V3 x y z = fromIntegral <$> p
-    f best@(bestDist, _) bp@(V3 a b c, _) =
-      let dist = (x - a) * (x - a) + (y - b) * (y - b) + (z - c) * (z - c)
-      in if dist < bestDist
-         then (dist, bp)
-         else best
-
-pointInRangeLUT
-  :: Bezier a => Int -> V.Vector BezierPoint -> a -> (Double -> Double) -> V3 Int -> Bool
-pointInRangeLUT s lut bezier fTtoR point =
-  let (!lutDist, (_, !lutT)) = closest point lut
-  in if lutDist <= fTtoR lutT
-     then True
-     else case lutT of
-            0 -> f 0 11
-            1 -> f (1 - (1 / steps)) 11
-            t -> f (t - (1 / steps)) 21
-  where 
-    steps = fromIntegral s
-    step = 0.1 / steps
-    V3 px py pz = fromIntegral <$> point
-    f t1 num = let tValues = V.enumFromStepN t1 step num
-                   -- TODO: use V.minimumOn once vector package updates version in nix repo
-                   --  V.minimumOn (\t -> distance (compute bezier t) point) tValues
-                   bestIdx = V.minIndex $
-                           (\t -> let V3 x y z = fst $ compute bezier t
-                                  in (x - px) * (x - px) + (y - py) * (y - py) + (z - pz) * (z - pz)
-                           ) <$> tValues
-                   bestT = tValues V.! bestIdx
-                   (V3 x y z, _) = compute bezier bestT
-                   d = (x - px) * (x - px) + (y - py) * (y - py) + (z - pz) * (z - pz)
-               in d <= (fTtoR bestT) * (fTtoR bestT)
-
-pointInRange :: Bezier a => a -> (Double -> Double) -> V3 Int -> Bool
-pointInRange bezier = pointInRangeLUT 100 (getLUT 100 bezier) bezier 
-
-data BezierCurve a = BezierCurve
-  { bezierCurve :: a
-  , bezierRadius :: Int
-  }
-  deriving (Show)
