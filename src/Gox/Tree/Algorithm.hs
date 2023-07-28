@@ -10,9 +10,10 @@ import Gox.Tree.Type
 
 -- base
 import Data.Fixed (mod')
+import Debug.Trace
 
 -- linear
-import Linear hiding (angle)
+import Linear hiding (angle, trace)
 
 -- lens
 import qualified Control.Lens.Getter as L
@@ -25,6 +26,7 @@ import Optics.Core
 import Optics.State
 import Optics.State.Operators
 import Optics.At ()
+import Optics.Empty
 
 -- mtl
 import Control.Monad.Reader.Class
@@ -606,7 +608,7 @@ makeBranches tree stem turtle segInd branchesOnSeg prevRotAngle isLeaves = do
               let s = (stemFromDepth dp1)
                       { sParent = Just i, sOffset = bOffset, sRadiusLimit = rad }
               newStem <- newStemVar tree s
-              (newTurt, freeNewTurt) <- newVar "newTurt" dirTur
+              (newTurt, freeNewTurt) <- newVar ("newTurt" ++ show depth) dirTur
               makeStem tree newStem newTurt 0 0 1 1 (Just posTur) Nothing
               freeNewTurt
               
@@ -716,8 +718,8 @@ leafBranchCounts :: RandomGen g => TreeL -> StemL -> Int -> Int -> Int -> Double
   -> C g r (DoubleL, C g r (), DoubleL, C g r ())
 leafBranchCounts tree stem start depth curveRes numBranchesFactor = do
   Parameters {..} <- ask
-  (leafCount, freeLeafCount) <- newVar "leafCount" (0 :: Double)
-  (branchCount, freeBranchCount) <- newVar "branchCount" (0 :: Double)
+  (leafCount, freeLeafCount) <- newVar ("leafCount" ++ show depth) (0 :: Double)
+  (branchCount, freeBranchCount) <- newVar ("branchCount" ++ show depth) (0 :: Double)
   if depth == pLevels - 1 && depth > 0 && pLeafBlosNum /= 0
     then do (leafCount .=) =<< calcLeafCount tree stem
             leafCount %= (* (1 - (fromIntegral start / fromIntegral curveRes)))
@@ -726,10 +728,10 @@ leafBranchCounts tree stem start depth curveRes numBranchesFactor = do
             branchCount %= (* numBranchesFactor)
   return (leafCount, freeLeafCount, branchCount, freeBranchCount)
 
-newPrevRotAngle :: RandomGen g => Int -> C g r (DoubleL, C g r ())
-newPrevRotAngle dp1 = do
+newPrevRotAngle :: RandomGen g => Int -> Int -> C g r (DoubleL, C g r ())
+newPrevRotAngle depth dp1 = do
   Parameters {..} <- ask
-  (prevRotAngle, freePRA) <- newVar "prevRotAngle" (0 :: Double)
+  (prevRotAngle, freePRA) <- newVar ("prevRotAngle" ++ show depth) (0 :: Double)
   if (pRotate V.! dp1) >= 0
     then (prevRotAngle .=) =<< getRandomR (0, 2 * pi)
     else prevRotAngle .= (pi / 180)
@@ -796,7 +798,8 @@ addSegLeaves tree stem turtle depth segInd curveRes leafCount leafNumError prevR
                              (\ a -> a - (fromIntegral los - fLeavesOnSeg))
                            return los
     when (abs leavesOnSeg > 0) $ 
-      makeLeaves tree stem turtle segInd leavesOnSeg prevRotAngle
+      traceM "makeLeaves being called but not yet implemented."
+      -- makeLeaves tree stem turtle segInd leavesOnSeg prevRotAngle
 
 addSegBranchesOrLeaves :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Int -> Int 
   -> DoubleL -> DoubleL -> DoubleL -> DoubleL -> DoubleL -> C g r ()
@@ -872,7 +875,7 @@ applyStemTropism turtle depth = do
 makeStemHelix :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Double -> Double -> Double 
   -> Maybe Turtle -> Maybe Turtle -> C g r ()
 makeStemHelix tree stem turtle start splitCorrAngle numBranchesFactor cloneProb posCorrTurtle clonedTurtle = callCC $ \ returnEarly -> do
-  whenM (use (stem % #sRadiusLimit) <&> (< 0.001)) $
+  whenM (use (stem % #sRadiusLimit) <&> (\ a -> 0 <= a && a < 0.001)) $
     returnEarly ()
 
   Parameters {..} <- ask
@@ -895,10 +898,10 @@ makeStemHelix tree stem turtle start splitCorrAngle numBranchesFactor cloneProb 
             
   let maxPointsPerSeg = (ceiling :: Double -> Int) $ max 1 $ 1 / fromIntegral curveRes
 
-  (branchNumError, freeBNE) <- newVar "branchNumError" (0 :: Double)
-  (leafNumError, freeLNE) <- newVar "leafNumError" (0 :: Double)
+  (branchNumError, freeBNE) <- newVar ("branchNumError" ++ show depth) (0 :: Double)
+  (leafNumError, freeLNE) <- newVar ("leafNumError" ++ show depth) (0 :: Double)
 
-  (prevRotAngle, freePRA) <- newPrevRotAngle dp1
+  (prevRotAngle, freePRA) <- newPrevRotAngle depth dp1
 
   (helP0, helP1, helP2, helAxis) <- calcHelixParameters stem turtle
 
@@ -967,7 +970,7 @@ makeStemHelix tree stem turtle start splitCorrAngle numBranchesFactor cloneProb 
 makeStemRegular :: RandomGen g => TreeL -> StemL -> TurtleL -> Int -> Double -> Double -> Double 
   -> Maybe Turtle -> Maybe Turtle -> C g r ()
 makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor cloneProb posCorrTurtle clonedTurtle = callCC $ \ returnEarly -> do
-  whenM (use (stem % #sRadiusLimit) <&> (< 0.001)) $
+  whenM (use (stem % #sRadiusLimit) <&> (\ a -> 0 <= a && a < 0.001)) $
     returnEarly ()
 
   Parameters {..} <- ask
@@ -994,10 +997,10 @@ makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor clonePro
             
   let maxPointsPerSeg = (ceiling :: Double -> Int) $ max 1 $ 1 / fromIntegral curveRes
 
-  (branchNumError, freeBNE) <- newVar "branchNumError" (0 :: Double)
-  (leafNumError, freeLNE) <- newVar "leafNumError" (0 :: Double)
+  (branchNumError, freeBNE) <- newVar ("branchNumError" ++ show depth) (0 :: Double)
+  (leafNumError, freeLNE) <- newVar ("leafNumError" ++ show depth) (0 :: Double)
 
-  (prevRotAngle, freePRA) <- newPrevRotAngle dp1
+  (prevRotAngle, freePRA) <- newPrevRotAngle depth dp1
 
   let pointsPerSeg = if depth == 0 || (pTaper V.! depth) > 1
                      then maxPointsPerSeg
@@ -1007,9 +1010,9 @@ makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor clonePro
   whenM (use (stem % #sCurve % #bezierPoints) <&> (not . V.null)) $
     error "Expected length of stem curve to be 0."
 
-  (cloneProbL, freeCloneProb) <- newVar "cloneProb" cloneProb
-  (splitCorrAngleL, freeSCA) <- newVar "splitCorrAngle" splitCorrAngle
-  (numBranchesFactorL, freeNBF) <- newVar "numBranchesFactor" numBranchesFactor
+  (cloneProbL, freeCloneProb) <- newVar ("cloneProb" ++ show depth) cloneProb
+  (splitCorrAngleL, freeSCA) <- newVar ("splitCorrAngle" ++ show depth) splitCorrAngle
+  (numBranchesFactorL, freeNBF) <- newVar ("numBranchesFactor" ++ show depth) numBranchesFactor
 
   (loop, segInd) <- label start
   when (segInd < curveRes + 1) $ do
@@ -1138,5 +1141,45 @@ makeTree generateLeaves = do
   freeTree
   return completeTree
 
+_constructTree :: Parameters -> Int -> Bool -> Tree
+_constructTree p g generateLeaves = evalC (makeTree generateLeaves) p (mkStdGen g)
+
 constructTree :: Parameters -> Int -> Bool -> Tree
-constructTree p g generateLeaves = evalC (makeTree generateLeaves) p (mkStdGen g)
+constructTree p g generateLeaves = 
+  over #tStems
+  (V.filter $ isn't (#sCurve % #bezierPoints % _Empty))
+  (_constructTree p g generateLeaves)
+
+scaleCurvePoint :: Double -> CurvePoint -> CurvePoint
+scaleCurvePoint f CurvePoint {..} =
+  CurvePoint 
+  { bpControl = (* f) <$> bpControl
+  , bpHandleLeft = (* f) <$> bpHandleLeft
+  , bpHandleRight = (* f) <$> bpHandleRight
+  , bpRadius = bpRadius * f
+  }
+
+scaleCurve :: Double -> Curve -> Curve
+scaleCurve f Curve {..} = Curve $ fmap (scaleCurvePoint f) bezierPoints
+
+scaleStem :: Double -> Stem -> Stem
+scaleStem f stem = stem { sCurve = scaleCurve f (sCurve stem) }
+
+scaleTree :: Double -> Tree -> Tree
+scaleTree f = over #tStems (fmap (scaleStem f))
+
+curveLargeEnough :: Double -> Curve -> Bool
+curveLargeEnough minRadius Curve {..} =
+  let cp = V.maximumBy
+           (\ cp1 cp2 -> compare (bpRadius cp1) (bpRadius cp2))
+           bezierPoints
+  in bpRadius cp >= minRadius
+
+stemLargeEnough :: Double -> Stem -> Bool
+stemLargeEnough minRadius stem = curveLargeEnough minRadius (sCurve stem)
+
+filterTree :: Double -> Tree -> Tree
+filterTree minRadius = over #tStems (V.filter $ stemLargeEnough minRadius)
+
+scaleFilterTree :: Double -> Double -> Tree -> Tree
+scaleFilterTree f minRadius = (filterTree minRadius) . (scaleTree f)
