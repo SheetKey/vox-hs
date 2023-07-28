@@ -21,6 +21,7 @@ import GHC.Generics (Generic)
 import Optics.Optic
 import Optics.Lens
 import Optics.Getter
+import Optics.Mapping
 import Optics.State.Operators
 import Data.Tuple.Optics
 
@@ -75,7 +76,6 @@ data Parameters = Parameters
   , pSegSplits      :: V.Vector Double -- 0-2, max number of dichotomous branches
   , pSplitAngle     :: V.Vector Double -- angle between dichotomous branches
   , pSplitAngleV    :: V.Vector Double -- variation
-  , pBevelRes       :: V.Vector Int    -- 
   , pCurveRes       :: V.Vector Int    -- >0, number of segments in each branch
   , pCurve          :: V.Vector Double -- angle that direction of stem changes about local x-axis
   , pCurveBack      :: V.Vector Double -- angle opposite to 'curve' that the stem curves back at half way (S-shaped branches)
@@ -138,6 +138,9 @@ data Tree = Tree
   , tStems         :: V.Vector Stem
   }
   deriving (Show, Generic)
+
+treeToCurves :: Tree -> V.Vector Curve
+treeToCurves = view (#tStems % mapping #sCurve)
 
 class Wrappable a where
   getWType :: a -> WType a
