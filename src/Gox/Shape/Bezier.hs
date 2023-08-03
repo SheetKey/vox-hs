@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Gox.Shape.Bezier where
@@ -14,6 +15,7 @@ import Gox.Tree.Type
 -- base
 import Control.Applicative (liftA2)
 import Control.Monad (join)
+import Debug.Trace
 
 -- vector
 import qualified Data.Vector as V
@@ -24,12 +26,16 @@ import Linear hiding (vector, _x, _y, _z, trace)
 
 -- hmatrix
 import Numeric.LinearAlgebra hiding ((<>))
+import qualified Numeric.LinearAlgebra as LA
 
 -- optics-core
 import Optics.Optic
 import Optics.Lens
 import Optics.Getter
 import Data.Tuple.Optics
+
+-- MonadRandom
+import Control.Monad.Random.Lazy
 
 coef0 :: CubicBezier -> V3 Double
 coef0 CubicBezier {..} = V3 cx0 cy0 cz0
@@ -308,24 +314,6 @@ distSqrd (V3 x1 y1 z1) (V3 x2 y2 z2) = (x1 - x2) * (x1 - x2)
                                        + (y1 - y2) * (y1 - y2)
                                        + (z1 - z2) * (z1 - z2)
 
-instance Bezier a => Shape (BezierCurve a) where
-  getaabb BezierCurve {..} = aabbEnlargeBy (bezieraabb bezierCurve) bezierRadius
-  containsPoint BezierCurve {..} = pointInRange bezierCurve (\_ -> fromIntegral bezierRadius)
-  fullBL16 a =
-    let preBL16s = emptyBL16 a
-        lut = getLUT 100 $ bezierCurve a
-        aContainsPoint =
-          pointInRangeLUT 100 lut (bezierCurve a) (\_ -> fromIntegral $ bezierRadius a)
-    in flip fmap preBL16s $
-       \(PreBL16 { offset = offset }) ->
-         PreBL16
-         { offset = offset
-         , preBlocks = VS.generate 16384 $ \i ->
-             if aContainsPoint (offset + unsafeVecIdxToVox i)
-             then 255
-             else 0
-         }
-
 instance Shape (TaperedBezierCurve CubicBezier) where
   getaabb TaperedBezierCurve {..} = aabbEnlargeBy (bezieraabb taperedBezierCurve)
                                     (ceiling taperMaxRadius)
@@ -345,7 +333,7 @@ instance Shape (TaperedBezierCurve CubicBezier) where
              in if 0 <= t && t <= 1
                 then let r = (taperingFunction a) t
                          (actualPoint, _) = compute (taperedBezierCurve a) t
-                     in if distSqrd point actualPoint <= r * r
+                     in if distSqrd point actualPoint <= 10 ^2
                         then 255
                         else 0
                 else 0
@@ -358,3 +346,248 @@ instance (Bezier a, Shape (f a)) => Shape (V.Vector (f a)) where
 
   drawShape v file = V.foldr' drawShape file v
 
+
+
+
+
+-- new potential
+-- generate a vector of only things very close to the curve: use this
+-- to batch update a zero vetor
+
+-- attempt 2
+
+-- integer points in a sphere centered at origin of radius r
+spherePoints :: Int -> V.Vector (V3 Int)
+spherePoints r =
+  let lower = negate r
+      upper = r
+      range = [lower..upper]
+      unfilteredPoints = V.fromList [ V3 x y z
+                                    | x <- range
+                                    , y <- range
+                                    , z <- range
+                                    ]
+  in V.filter (\ (V3 x y z) -> x*x + y*y + z*z <= r*r) unfilteredPoints
+
+-- expects the output of 'spherePoints' as first arg
+-- second arg is 'unsafeVecIdxToVox i' where 'i' is a vector index from 0 to 16383
+-- outputs vector indices to be zipper with '255' and used with VS.//
+sphereAroundi :: V.Vector (V3 Int) -> V3 Int -> V.Vector (Int)
+sphereAroundi sphere iPos =
+  let points = (+iPos) <$> sphere
+      filtered = V.filter (\ (V3 x y z) ->
+                            0 <= x && x < 16
+                            && 0 <= y && y < 16
+                            && 0 <= z && z < 16
+                        ) points
+  in V.concatMap (\ v -> let i = unsafeVoxToVecIdx v in V.fromList [i, i+1, i+2, i+3] ) filtered
+
+getLUT :: Bezier a => Int -> a -> V.Vector BezierPoint
+getLUT steps bezier = V.generate (steps + 1) $ \i ->
+  let t = (fromIntegral i) / (fromIntegral steps)
+  in compute bezier t
+
+lutToPoints :: V.Vector BezierPoint -> V.Vector (V3 Int, Double)
+lutToPoints = fmap (\ (a, b) -> (fmap truncate a, b))
+
+filterLut :: V.Vector (V3 Int, Double) -> V3 Int -> V.Vector (V3 Int, Double)
+filterLut lut offset = V.filter
+  (\ (v, _) ->
+      let V3 x y z = v - offset
+      in 0 <= x && x < 16
+         && 0 <= y && y < 16
+         && 0 <= z && z < 16
+  ) lut
+
+newtype TBC a = TBC (TaperedBezierCurve a)
+
+instance Show a => Show (TBC (TaperedBezierCurve a)) where
+  show (TBC c) = show c
+
+-- ISSUE: lut gets checked before full curve is generated:
+--        a block that contains no lut point may be adjacent to a lut point
+--        in another block.
+-- FIX: should just calculate the whole curve first, then more filtering in the mapping func
+instance Shape (TBC CubicBezier) where
+  getaabb (TBC c) = getaabb c
+  containsPoint (TBC (TaperedBezierCurve {..})) p = undefined
+  fullBL16 (TBC a@(TaperedBezierCurve {..})) =
+    let preBL16s = emptyBL16 a
+        preBL16Num = V.length preBL16s
+        preLut = lutToPoints $
+                 getLUT (preBL16Num * (ceiling $ 16 / taperMaxRadius)) taperedBezierCurve
+    in flip fmap preBL16s $
+       \ (PreBL16 { offset = offset }) ->
+         let lut = filterLut preLut offset
+         in case V.length lut of
+              0 -> PreBL16 { offset = offset, preBlocks = VS.replicate 16384 0 }
+              _ -> let t = snd $ lut V.! 0
+                       r = taperingFunction t
+                       sphere = spherePoints (ceiling r)
+                       (lutis, _) = V.unzip lut
+                       -- possibply convert to storable vector of ints and use VS.update not VS.//
+                       points = V.toList $ fmap (, 255) $ V.concatMap (sphereAroundi sphere) lutis
+                       blocks = (VS.replicate 16384 0) VS.// points
+                   in PreBL16
+                      { offset = offset
+                      , preBlocks = blocks
+                      }
+
+-- end attempt 2
+
+-- pointsOnSphere :: Int -> V.Vector (V3 Double)
+-- pointsOnSphere n = let g = mkStdGen 12345 in (flip evalRand) g $ 
+--   V.replicateM n $ do 
+--   u <- getRandomR (-1, 1)
+--   t <- getRandomR (0, 2 * pi)
+--   let s = sqrt $ 1 - u * u
+--   return $ V3 (s * cos t) (s * sin t) u
+-- 
+-- surroundingCoords :: Double -> Int -> V.Vector (Int, Double)
+-- surroundingCoords r i = 
+--   fmap
+--   ((, 255) . unsafeVoxToVecIdx . (+ unsafeVecIdxToVox i) . (fmap (truncate . (* r))))
+--   (pointsOnSphere 20)
+-- 
+-- -- assumes already filtered of empty voxels
+-- mkUpdateingVec :: Double -> V.Vector (Int, Double) -> V.Vector (Int, Double)
+-- mkUpdateingVec r v = V.concatMap (\ (i, _) -> surroundingCoords r i) v
+-- 
+-- getLUT :: Bezier a => Int -> a -> V.Vector BezierPoint
+-- getLUT steps bezier = V.generate (steps + 1) $ \i ->
+--   let t = (fromIntegral i) / (fromIntegral steps)
+--   in compute bezier t
+-- 
+-- lutToIdxed :: V.Vector BezierPoint -> V.Vector (Int, Double)
+-- lutToIdxed = fmap ((, 255) . unsafeVoxToVecIdx . (fmap ceiling) . fst)
+
+
+-- NEWEST new potential: implicit matrix form
+
+mkS2 :: V3 Double -> V3 Double -> V3 Double -> V3 Double -> Matrix Double
+mkS2 (V3 x0 y0 z0) (V3 x1 y1 z1) (V3 x2 y2 z2) (V3 x3 y3 z3) =
+  (6><12)
+  [ 1,    0,   0,    x0,        0,        0,         y0,        0,        0,         z0,        0,        0
+  , 3/5,  2/5, 0,    (x1*3)/5,  (x0*2)/5, 0,         (y1*3)/5,  (y0*2)/5, 0,         (z1*3)/5,  (z0*2)/5, 0
+  , 3/10, 3/5, 1/10, (x2*3)/10, (x1*3)/5, x0/10,     (y2*3)/10, (y1*3)/5, y0/10,     (z2*3)/10, (z1*3)/5, z0/10
+  , 1/10, 3/5, 3/10, x3/10,     (x2*3)/5, (x1*3)/10, y3/10,     (y2*3)/5, (y1*3/10), z3/10,     (z2*3)/5, (z1*3)/10
+  , 0,    2/5, 3/5,  0,         (x3*2)/5, (x2*3)/5,  0,         (y3*2)/5, (y2*3)/5,  0,         (z3*2)/5, (z2*3)/5
+  , 0,    0,   1,    0,         0,        x3,        0,         0,        y3,        0,         0,        z3
+  ]
+
+cubicS2 :: CubicBezier -> Matrix Double
+cubicS2 CubicBezier {..} =
+  (6><12)
+  [ 1,    0,   0,    cx0,        0,         0,          cy0,        0,         0,          cz0,        0,         0
+  , 3/5,  2/5, 0,    (cx1*3)/5,  (cx0*2)/5, 0,          (cy1*3)/5,  (cy0*2)/5, 0,          (cz1*3)/5,  (cz0*2)/5, 0
+  , 3/10, 3/5, 1/10, (cx2*3)/10, (cx1*3)/5, cx0/10,     (cy2*3)/10, (cy1*3)/5, cy0/10,     (cz2*3)/10, (cz1*3)/5, cz0/10
+  , 1/10, 3/5, 3/10, cx3/10,     (cx2*3)/5, (cx1*3)/10, cy3/10,     (cy2*3)/5, (cy1*3/10), cz3/10,     (cz2*3)/5, (cz1*3)/10
+  , 0,    2/5, 3/5,  0,          (cx3*2)/5, (cx2*3)/5,  0,          (cy3*2)/5, (cy2*3)/5,  0,          (cz3*2)/5, (cz2*3)/5
+  , 0,    0,   1,    0,          0,         cx3,        0,          0,         cy3,        0,          0,         cz3
+  ]
+
+mkS1 :: V3 Double -> V3 Double -> V3 Double -> V3 Double -> Matrix Double
+mkS1 (V3 x0 y0 z0) (V3 x1 y1 z1) (V3 x2 y2 z2) (V3 x3 y3 z3) =
+  (5><8)
+  [ 1  , 0  , x0      , 0       , y0      , 0       , z0      , 0              
+  , 3/4, 1/4, (3*x1)/4, x0/4    , (3*y1)/4, y0/4    , (3*z1)/4, z0/4
+  , 1/2, 1/2, x2/2    , x1/2    , y2/2    , y1/2    , z2/2    , z1/2
+  , 1/4, 3/4, x3/4    , (3*x2)/4, y3/4    , (3*y2)/4, z3/4    , (3*z2)/4
+  , 0  , 1  , 0       , x3      , 0       , y3      , 0       , z3
+  ]
+
+cubicS1 :: CubicBezier -> Matrix Double
+cubicS1 CubicBezier {..} =
+  (5><8)
+  [ 1  , 0  , cx0      , 0        , cy0      , 0        , cz0      , 0              
+  , 3/4, 1/4, (3*cx1)/4, cx0/4    , (3*cy1)/4, cy0/4    , (3*cz1)/4, cz0/4
+  , 1/2, 1/2, cx2/2    , cx1/2    , cy2/2    , cy1/2    , cz2/2    , cz1/2
+  , 1/4, 3/4, cx3/4    , (3*cx2)/4, cy3/4    , (3*cy2)/4, cz3/4    , (3*cz2)/4
+  , 0  , 1  , 0        , cx3      , 0        , cy3      , 0        , cz3
+  ]
+
+-- expects the nullsapce of S1. (mkS1 and cubicS1 compute S1, NOT nullspace S1.
+-- calling this on the output of either function can produce runtime matrix size errors.
+-- instead call 'nullsapce' in between the computations.)
+nullS1toM :: Matrix Double -> (Matrix Double, Matrix Double, Matrix Double, Matrix Double)
+nullS1toM nullS1 =
+  let colNum = cols nullS1
+      m0 = subMatrix (0, 0) (2, colNum) nullS1
+      m1 = subMatrix (2, 0) (2, colNum) nullS1
+      m2 = subMatrix (4, 0) (2, colNum) nullS1
+      m3 = subMatrix (6, 0) (2, colNum) nullS1
+  in (m0, m1, m2, m3)
+
+nullS2toM :: Matrix Double -> (Matrix Double, Matrix Double, Matrix Double, Matrix Double)
+nullS2toM nullS2 =
+  let colNum = cols nullS2
+      m0 = subMatrix (0, 0) (3, colNum) nullS2
+      m1 = subMatrix (3, 0) (3, colNum) nullS2
+      m2 = subMatrix (6, 0) (3, colNum) nullS2
+      m3 = subMatrix (9, 0) (3, colNum) nullS2
+  in (m0, m1, m2, m3)
+
+delta :: (Matrix Double, Matrix Double, Matrix Double, Matrix Double)
+      -> V3 Double
+      -> Double
+delta (m0, m1, m2, m3) (V3 x y z) =
+  let m0' = m0
+      m1' = scale x m1
+      m2' = scale y m2
+      m3' = scale z m3
+      m = m0' + m1' + m2' + m3'
+      mT = tr' m
+      --(_, (d, _)) = invlndet (m LA.<> mT)
+  in det (m LA.<> mT)
+
+cubicDeltaS1 :: CubicBezier -> V3 Double -> Double
+cubicDeltaS1 = delta . nullS1toM . nullspace . cubicS1
+
+cubicDeltaS2 :: CubicBezier -> V3 Double -> Double
+cubicDeltaS2 = delta . nullS2toM . nullspace . cubicS2
+
+newtype TBCS1 a = TBCS1 (TaperedBezierCurve a)
+
+instance Show a => Show (TBCS1 (TaperedBezierCurve a)) where
+  show (TBCS1 c) = show c
+
+instance Shape (TBCS1 CubicBezier) where
+  getaabb (TBCS1 c) = getaabb c
+  containsPoint (TBCS1 (TaperedBezierCurve {..})) p =
+    cubicDeltaS1 taperedBezierCurve (fromIntegral <$> p) <= taperMaxRadius * taperMaxRadius
+  fullBL16 (TBCS1 a@(TaperedBezierCurve {..})) =
+    let preBL16s = emptyBL16 a
+        delta = cubicDeltaS1 taperedBezierCurve
+        r = taperMaxRadius * taperMaxRadius
+    in flip fmap preBL16s $
+       \ (PreBL16 { offset = offset }) ->
+         PreBL16
+         { offset = offset
+         , preBlocks = VS.generate 16384 $ \ i ->
+             let point = fmap fromIntegral $ offset + unsafeVecIdxToVox i
+                 d = delta point
+             in if d <= r then 255 else 0
+         }
+
+newtype TBCS2 a = TBCS2 (TaperedBezierCurve a)
+
+instance Show a => Show (TBCS2 (TaperedBezierCurve a)) where
+  show (TBCS2 c) = show c
+
+instance Shape (TBCS2 CubicBezier) where
+  getaabb (TBCS2 c) = getaabb c
+  containsPoint (TBCS2 (TaperedBezierCurve {..})) p =
+    cubicDeltaS2 taperedBezierCurve (fromIntegral <$> p) <= taperMaxRadius * taperMaxRadius
+  fullBL16 (TBCS2 a@(TaperedBezierCurve {..})) =
+    let preBL26s = emptyBL16 a
+        delta = cubicDeltaS2 taperedBezierCurve
+        r = taperMaxRadius * 1e9
+    in flip fmap preBL26s $
+       \ (PreBL16 { offset = offset }) ->
+         PreBL16
+         { offset = offset
+         , preBlocks = VS.generate 16384 $ \ i ->
+             let point = fmap fromIntegral $ offset + unsafeVecIdxToVox i
+                 d = delta point
+             in if d ^ 2 <= r then 255 else 0
+         }
