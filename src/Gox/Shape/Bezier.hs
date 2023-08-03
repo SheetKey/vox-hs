@@ -344,7 +344,7 @@ instance (Bezier a, Shape (f a)) => Shape (V.Vector (f a)) where
   containsPoint v p = V.any ((flip containsPoint) p) v
   fullBL16 = join . fmap fullBL16
 
-  drawShape v file = V.foldr' drawShape file v
+  drawShape v file = V.foldr drawShape file v
 
 
 
@@ -369,18 +369,11 @@ spherePoints r =
                                     ]
   in V.filter (\ (V3 x y z) -> x*x + y*y + z*z <= r*r) unfilteredPoints
 
--- expects the output of 'spherePoints' as first arg
--- second arg is 'unsafeVecIdxToVox i' where 'i' is a vector index from 0 to 16383
--- outputs vector indices to be zipper with '255' and used with VS.//
-sphereAroundi :: V.Vector (V3 Int) -> V3 Int -> V.Vector (Int)
-sphereAroundi sphere iPos =
-  let points = (+iPos) <$> sphere
-      filtered = V.filter (\ (V3 x y z) ->
-                            0 <= x && x < 16
-                            && 0 <= y && y < 16
-                            && 0 <= z && z < 16
-                        ) points
-  in V.concatMap (\ v -> let i = unsafeVoxToVecIdx v in V.fromList [i, i+1, i+2, i+3] ) filtered
+sphereAround :: (Double -> Double) -> (V3 Int, Double) -> V.Vector (V3 Int)
+sphereAround f (pos, t) = 
+  let r = f t
+      sphere = spherePoints (ceiling r)
+  in (+pos) <$> sphere
 
 getLUT :: Bezier a => Int -> a -> V.Vector BezierPoint
 getLUT steps bezier = V.generate (steps + 1) $ \i ->
@@ -390,13 +383,13 @@ getLUT steps bezier = V.generate (steps + 1) $ \i ->
 lutToPoints :: V.Vector BezierPoint -> V.Vector (V3 Int, Double)
 lutToPoints = fmap (\ (a, b) -> (fmap truncate a, b))
 
-filterLut :: V.Vector (V3 Int, Double) -> V3 Int -> V.Vector (V3 Int, Double)
+filterLut :: V.Vector (V3 Int) -> V3 Int -> V.Vector (V3 Int)
 filterLut lut offset = V.filter
-  (\ (v, _) ->
-      let V3 x y z = v - offset
-      in 0 <= x && x < 16
-         && 0 <= y && y < 16
-         && 0 <= z && z < 16
+  (\ v ->
+     let V3 x y z = v - offset
+     in 0 <= x && x < 16
+        && 0 <= y && y < 16
+        && 0 <= z && z < 16
   ) lut
 
 newtype TBC a = TBC (TaperedBezierCurve a)
@@ -404,29 +397,25 @@ newtype TBC a = TBC (TaperedBezierCurve a)
 instance Show a => Show (TBC (TaperedBezierCurve a)) where
   show (TBC c) = show c
 
--- ISSUE: lut gets checked before full curve is generated:
---        a block that contains no lut point may be adjacent to a lut point
---        in another block.
--- FIX: should just calculate the whole curve first, then more filtering in the mapping func
 instance Shape (TBC CubicBezier) where
   getaabb (TBC c) = getaabb c
   containsPoint (TBC (TaperedBezierCurve {..})) p = undefined
   fullBL16 (TBC a@(TaperedBezierCurve {..})) =
     let preBL16s = emptyBL16 a
         preBL16Num = V.length preBL16s
-        preLut = lutToPoints $
-                 getLUT (preBL16Num * (ceiling $ 16 / taperMaxRadius)) taperedBezierCurve
+        lutSize = preBL16Num * (max 2 $ ceiling $ 16 / taperMaxRadius)
     in flip fmap preBL16s $
        \ (PreBL16 { offset = offset }) ->
-         let lut = filterLut preLut offset
+         let preLut = lutToPoints $
+                      getLUT lutSize taperedBezierCurve
+             circledLut = V.concatMap (sphereAround taperingFunction) preLut
+             lut = filterLut circledLut offset
          in case V.length lut of
               0 -> PreBL16 { offset = offset, preBlocks = VS.replicate 16384 0 }
-              _ -> let t = snd $ lut V.! 0
-                       r = taperingFunction t
-                       sphere = spherePoints (ceiling r)
-                       (lutis, _) = V.unzip lut
-                       -- possibply convert to storable vector of ints and use VS.update not VS.//
-                       points = V.toList $ fmap (, 255) $ V.concatMap (sphereAroundi sphere) lutis
+              _ -> let points = concatMap
+                                (\ v -> let i = unsafeVoxToVecIdx (v - offset)
+                                        in [(i, 255) , (i+1, 255), (i+2, 255), (i+3, 255)]
+                                ) lut
                        blocks = (VS.replicate 16384 0) VS.// points
                    in PreBL16
                       { offset = offset
