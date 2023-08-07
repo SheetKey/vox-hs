@@ -344,7 +344,7 @@ instance (Bezier a, Shape (f a)) => Shape (V.Vector (f a)) where
   containsPoint v p = V.any ((flip containsPoint) p) v
   fullBL16 = join . fmap fullBL16
 
-  drawShape v file = V.foldr drawShape file v
+  drawShape v file = V.foldr' drawShape file v
 
 
 
@@ -392,6 +392,37 @@ filterLut lut offset = V.filter
         && 0 <= z && z < 16
   ) lut
 
+-- accepts what is named 'circledLut': the lut points with sheres centered at each point
+partitionCircledLut :: V.Vector (V3 Int) -> V.Vector PreBL16
+                     -> V.Vector ((V3 Int, V.Vector (V3 Int)))
+partitionCircledLut circledLut preBL16s =
+  let (rest, acc) = V.foldl
+                    (\ (remCLut, acc) (PreBL16 offset _) ->
+                       let (inRange, rem) = V.partition
+                                            (\ v -> let V3 x y z = v - offset
+                                                    in 0 <= x && x < 16
+                                                       && 0 <= y && y < 16
+                                                       && 0 <= z && z < 16
+                                            ) remCLut
+                       in if V.null inRange
+                          then (rem, acc)
+                          else (rem, (offset, inRange) `V.cons` acc)
+                    ) (circledLut, V.empty) preBL16s
+  in if not (V.null rest)
+     -- then error "expected 'rest' to be empty when partitioning a 'circledLut'."
+     then trace "doesn't fit in bl16" $ acc
+     else acc
+
+toBL16 :: (V3 Int, V.Vector (V3 Int)) -> PreBL16
+toBL16 (offset, pnts) =
+  let reps = concatMap
+             (\ v -> let i = unsafeVoxToVecIdx (v - offset)
+                     in [(i, 255), (i+1, 255), (i+2, 255), (i+3, 255)]
+             ) pnts
+      blocks = (VS.replicate 16384 0) VS.// reps
+  in PreBL16 { offset = offset, preBlocks = blocks }
+      
+
 newtype TBC a = TBC (TaperedBezierCurve a)
 
 instance Show a => Show (TBC (TaperedBezierCurve a)) where
@@ -403,24 +434,31 @@ instance Shape (TBC CubicBezier) where
   fullBL16 (TBC a@(TaperedBezierCurve {..})) =
     let preBL16s = emptyBL16 a
         preBL16Num = V.length preBL16s
-        lutSize = preBL16Num * (max 2 $ ceiling $ 16 / taperMaxRadius)
-    in flip fmap preBL16s $
-       \ (PreBL16 { offset = offset }) ->
-         let preLut = lutToPoints $
-                      getLUT lutSize taperedBezierCurve
-             circledLut = V.concatMap (sphereAround taperingFunction) preLut
-             lut = filterLut circledLut offset
-         in case V.length lut of
-              0 -> PreBL16 { offset = offset, preBlocks = VS.replicate 16384 0 }
-              _ -> let points = concatMap
-                                (\ v -> let i = unsafeVoxToVecIdx (v - offset)
-                                        in [(i, 255) , (i+1, 255), (i+2, 255), (i+3, 255)]
-                                ) lut
-                       blocks = (VS.replicate 16384 0) VS.// points
-                   in PreBL16
-                      { offset = offset
-                      , preBlocks = blocks
-                      }
+        preLut = lutToPoints $
+                 getLUT (preBL16Num * (max 2 $ ceiling $ 16 / taperMaxRadius)) taperedBezierCurve
+        circledLut = V.concatMap (sphereAround taperingFunction) preLut
+        partitioned = partitionCircledLut circledLut preBL16s
+    in toBL16 <$> partitioned
+  -- fullBL16 (TBC a@(TaperedBezierCurve {..})) =
+  --   let preBL16s = emptyBL16 a
+  --       preBL16Num = V.length preBL16s
+  --       preLut = lutToPoints $
+  --                getLUT (preBL16Num * (max 2 $ ceiling $ 16 / taperMaxRadius)) taperedBezierCurve
+  --       circledLut = V.concatMap (sphereAround taperingFunction) preLut
+  --   in trace (show preBL16Num) $ flip fmap preBL16s $
+  --      \ (PreBL16 { offset = offset }) ->
+  --        let lut = filterLut circledLut offset
+  --        in case V.length lut of
+  --             0 -> PreBL16 { offset = offset, preBlocks = VS.replicate 16384 0 }
+  --             _ -> let points = concatMap
+  --                               (\ v -> let i = unsafeVoxToVecIdx (v - offset)
+  --                                       in [(i, 255) , (i+1, 255), (i+2, 255), (i+3, 255)]
+  --                               ) lut
+  --                      blocks = (VS.replicate 16384 0) VS.// points
+  --                  in PreBL16
+  --                     { offset = offset
+  --                     , preBlocks = blocks
+  --                     }
 
 -- end attempt 2
 
