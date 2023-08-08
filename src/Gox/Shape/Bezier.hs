@@ -398,7 +398,7 @@ partitionCircledLut :: V.Vector (V3 Int) -> V.Vector PreBL16
 partitionCircledLut circledLut preBL16s =
   let (rest, acc) = V.foldl
                     (\ (remCLut, acc) (PreBL16 offset _) ->
-                       let (inRange, rem) = V.partition
+                       let (inRange, rem) = V.unstablePartition
                                             (\ v -> let V3 x y z = v - offset
                                                     in 0 <= x && x < 16
                                                        && 0 <= y && y < 16
@@ -421,7 +421,95 @@ toBL16 (offset, pnts) =
              ) pnts
       blocks = (VS.replicate 16384 0) VS.// reps
   in PreBL16 { offset = offset, preBlocks = blocks }
-      
+
+calcOffsets :: Double -> V3 Int -> V.Vector (V3 Int)
+calcOffsets radius pnt =
+  let r = 1 + ceiling radius
+      minPnt = pnt - (V3 r r r)
+      V3 xMax yMax zMax = pnt + (V3 r r r)
+      V3 xoff yoff zoff = (\ x -> 16 * (floor $ fromIntegral x / 16)) <$> minPnt
+  in case (xoff + 15 >= xMax, yoff + 15 >= yMax, zoff + 15 >= zMax) of
+       (True, True, True)    -> V.fromList [ (V3  xoff        yoff              zoff) ]
+       (False, True, True)   -> V.fromList [ (V3  xoff        yoff              zoff)
+                                           , (V3 (xoff + 16)  yoff              zoff) ]
+       (False, False, True)  -> V.fromList [ (V3  xoff        yoff              zoff)
+                                           , (V3 (xoff + 16)  yoff              zoff)
+                                           , (V3  xoff       (yoff + 16)        zoff)
+                                           , (V3 (xoff + 16) (yoff + 16)        zoff) ]
+       (False, False, False) -> V.fromList [ (V3  xoff        yoff              zoff)
+                                           , (V3 (xoff + 16)  yoff              zoff)
+                                           , (V3  xoff       (yoff + 16)        zoff)
+                                           , (V3  xoff        yoff             (zoff + 16))
+                                           , (V3 (xoff + 16) (yoff + 16)        zoff)
+                                           , (V3 (xoff + 16)  yoff             (zoff + 16))
+                                           , (V3  xoff       (yoff + 16)       (zoff + 16))
+                                           , (V3 (xoff + 16) (yoff + 16)       (zoff + 16)) ]
+       (False, True, False)  -> V.fromList [ (V3  xoff        yoff              zoff)
+                                           , (V3 (xoff + 16)  yoff              zoff)
+                                           , (V3  xoff        yoff             (zoff + 16))
+                                           , (V3 (xoff + 16)  yoff             (zoff + 16)) ]
+       (True, False, True)   -> V.fromList [ (V3  xoff        yoff              zoff)
+                                           , (V3  xoff       (yoff + 16)        zoff) ]
+       (True, False, False)  -> V.fromList [ (V3  xoff        yoff              zoff)
+                                           , (V3  xoff       (yoff + 16)        zoff)
+                                           , (V3  xoff        yoff              (zoff + 16))
+                                           , (V3  xoff       (yoff + 16)        (zoff + 16)) ]
+       (True, True, False)   -> V.fromList [ (V3  xoff        yoff               zoff)
+                                           , (V3  xoff        yoff              (zoff + 16)) ]
+
+-- return vector of (offset, lutPoint)
+offsetsWithPoints :: (Double -> Double) -> V.Vector (V3 Int, Double)
+                  -> V.Vector (V3 Int, (V3 Int, Double))
+offsetsWithPoints f = V.foldl (\ acc (pnt, t) ->
+                                 let os = calcOffsets t pnt
+                                     osPnts = (, (pnt, t)) <$> os
+                                 in osPnts V.++ acc
+                              ) V.empty
+
+offsetPointsToBL16 :: (Double -> Double) -> (V3 Int, V.Vector (V3 Int, Double)) -> PreBL16
+offsetPointsToBL16 f (offset, pnts) =
+  let blocks = V.foldl (\ acc pnt ->
+                          let circled = sphereAround f pnt
+                              is = concatMap (\ v ->
+                                                let V3 x y z = v - offset
+                                                in if 0 <= x && x < 16
+                                                      && 0 <= y && y < 16
+                                                      && 0 <= z && z < 16
+                                                   then let i = unsafeVoxToVecIdx (v - offset)
+                                                        in [ (i, 255), (i+1, 255)
+                                                           , (i+2, 255), (i+3, 255)]
+                                                   else []
+                                             ) circled
+                          in acc VS.// is
+                       ) (VS.replicate 16384 0) pnts
+  in PreBL16 { offset = offset, preBlocks = blocks }
+
+offsetPntsToBL16 :: (Double -> Double) -> V.Vector (V3 Int, (V3 Int, Double)) -> V.Vector PreBL16
+offsetPntsToBL16 f = go V.empty
+  where
+    go acc v = case v V.!? 0 of
+      Just (offset, _) ->
+        let (offsetV, rest) = V.unstablePartition (\ (o, _) -> o == offset) v
+            owps = (offset, snd <$> offsetV)
+            bl16 = offsetPointsToBL16 f owps
+        in go (bl16 `V.cons` acc) rest
+      Nothing -> acc
+
+pointToCircleBL16 :: (Double -> Double) -> (V3 Int, Double) -> PreBL16
+pointToCircleBL16 f lutPnt@(pnt, _) = 
+  let circled = sphereAround f lutPnt
+      offset = pnt - (V3 8 8 8)
+      is = concatMap
+           (\ v -> let i = unsafeVoxToVecIdx (v - offset)
+                   in [(i, 255), (i+1, 255), (i+2, 255), (i+3, 255)]
+           ) circled
+      blocks = (VS.replicate 16384 0) VS.// is
+  in PreBL16 { offset = offset, preBlocks = blocks }
+
+-- assumes that maxradius is less than or equal to 8: makes a PreBL16 for each lut point
+lutToBL16s :: (Double -> Double) -> V.Vector (V3 Int, Double) -> V.Vector PreBL16
+lutToBL16s f = fmap (pointToCircleBL16 f)
+
 
 newtype TBC a = TBC (TaperedBezierCurve a)
 
@@ -436,9 +524,12 @@ instance Shape (TBC CubicBezier) where
         preBL16Num = V.length preBL16s
         preLut = lutToPoints $
                  getLUT (preBL16Num * (max 2 $ ceiling $ 16 / taperMaxRadius)) taperedBezierCurve
-        circledLut = V.concatMap (sphereAround taperingFunction) preLut
-        partitioned = partitionCircledLut circledLut preBL16s
-    in toBL16 <$> partitioned
+        osps = offsetsWithPoints taperingFunction preLut
+    in offsetPntsToBL16 taperingFunction osps
+    -- in trace (show (V.length preLut)) $ lutToBL16s taperingFunction preLut
+    --     circledLut = V.concatMap (sphereAround taperingFunction) preLut
+    --     partitioned = partitionCircledLut circledLut preBL16s
+    -- in toBL16 <$> partitioned
   -- fullBL16 (TBC a@(TaperedBezierCurve {..})) =
   --   let preBL16s = emptyBL16 a
   --       preBL16Num = V.length preBL16s
