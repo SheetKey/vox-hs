@@ -422,41 +422,52 @@ toBL16 (offset, pnts) =
       blocks = (VS.replicate 16384 0) VS.// reps
   in PreBL16 { offset = offset, preBlocks = blocks }
 
+-- calcOffsets :: Double -> V3 Int -> V.Vector (V3 Int)
+-- calcOffsets radius pnt =
+--   let r = 1 + ceiling radius
+--       minPnt = pnt - (V3 r r r)
+--       V3 xMax yMax zMax = pnt + (V3 r r r)
+--       V3 xoff yoff zoff = (\ x -> 16 * (floor $ fromIntegral x / 16)) <$> minPnt
+--   in case (xoff + 15 >= xMax, yoff + 15 >= yMax, zoff + 15 >= zMax) of
+--        (True, True, True)    -> V.fromList [ (V3  xoff        yoff              zoff) ]
+--        (False, True, True)   -> V.fromList [ (V3  xoff        yoff              zoff)
+--                                            , (V3 (xoff + 16)  yoff              zoff) ]
+--        (False, False, True)  -> V.fromList [ (V3  xoff        yoff              zoff)
+--                                            , (V3 (xoff + 16)  yoff              zoff)
+--                                            , (V3  xoff       (yoff + 16)        zoff)
+--                                            , (V3 (xoff + 16) (yoff + 16)        zoff) ]
+--        (False, False, False) -> V.fromList [ (V3  xoff        yoff              zoff)
+--                                            , (V3 (xoff + 16)  yoff              zoff)
+--                                            , (V3  xoff       (yoff + 16)        zoff)
+--                                            , (V3  xoff        yoff             (zoff + 16))
+--                                            , (V3 (xoff + 16) (yoff + 16)        zoff)
+--                                            , (V3 (xoff + 16)  yoff             (zoff + 16))
+--                                            , (V3  xoff       (yoff + 16)       (zoff + 16))
+--                                            , (V3 (xoff + 16) (yoff + 16)       (zoff + 16)) ]
+--        (False, True, False)  -> V.fromList [ (V3  xoff        yoff              zoff)
+--                                            , (V3 (xoff + 16)  yoff              zoff)
+--                                            , (V3  xoff        yoff             (zoff + 16))
+--                                            , (V3 (xoff + 16)  yoff             (zoff + 16)) ]
+--        (True, False, True)   -> V.fromList [ (V3  xoff        yoff              zoff)
+--                                            , (V3  xoff       (yoff + 16)        zoff) ]
+--        (True, False, False)  -> V.fromList [ (V3  xoff        yoff              zoff)
+--                                            , (V3  xoff       (yoff + 16)        zoff)
+--                                            , (V3  xoff        yoff              (zoff + 16))
+--                                            , (V3  xoff       (yoff + 16)        (zoff + 16)) ]
+--        (True, True, False)   -> V.fromList [ (V3  xoff        yoff               zoff)
+--                                            , (V3  xoff        yoff              (zoff + 16)) ]
+
 calcOffsets :: Double -> V3 Int -> V.Vector (V3 Int)
 calcOffsets radius pnt =
   let r = 1 + ceiling radius
       minPnt = pnt - (V3 r r r)
-      V3 xMax yMax zMax = pnt + (V3 r r r)
-      V3 xoff yoff zoff = (\ x -> 16 * (floor $ fromIntegral x / 16)) <$> minPnt
-  in if radius /= 5 then error "not 5"
-  else case (xoff + 15 >= xMax, yoff + 15 >= yMax, zoff + 15 >= zMax) of
-       (True, True, True)    -> V.fromList [ (V3  xoff        yoff              zoff) ]
-       (False, True, True)   -> V.fromList [ (V3  xoff        yoff              zoff)
-                                           , (V3 (xoff + 16)  yoff              zoff) ]
-       (False, False, True)  -> V.fromList [ (V3  xoff        yoff              zoff)
-                                           , (V3 (xoff + 16)  yoff              zoff)
-                                           , (V3  xoff       (yoff + 16)        zoff)
-                                           , (V3 (xoff + 16) (yoff + 16)        zoff) ]
-       (False, False, False) -> V.fromList [ (V3  xoff        yoff              zoff)
-                                           , (V3 (xoff + 16)  yoff              zoff)
-                                           , (V3  xoff       (yoff + 16)        zoff)
-                                           , (V3  xoff        yoff             (zoff + 16))
-                                           , (V3 (xoff + 16) (yoff + 16)        zoff)
-                                           , (V3 (xoff + 16)  yoff             (zoff + 16))
-                                           , (V3  xoff       (yoff + 16)       (zoff + 16))
-                                           , (V3 (xoff + 16) (yoff + 16)       (zoff + 16)) ]
-       (False, True, False)  -> V.fromList [ (V3  xoff        yoff              zoff)
-                                           , (V3 (xoff + 16)  yoff              zoff)
-                                           , (V3  xoff        yoff             (zoff + 16))
-                                           , (V3 (xoff + 16)  yoff             (zoff + 16)) ]
-       (True, False, True)   -> V.fromList [ (V3  xoff        yoff              zoff)
-                                           , (V3  xoff       (yoff + 16)        zoff) ]
-       (True, False, False)  -> V.fromList [ (V3  xoff        yoff              zoff)
-                                           , (V3  xoff       (yoff + 16)        zoff)
-                                           , (V3  xoff        yoff              (zoff + 16))
-                                           , (V3  xoff       (yoff + 16)        (zoff + 16)) ]
-       (True, True, False)   -> V.fromList [ (V3  xoff        yoff               zoff)
-                                           , (V3  xoff        yoff              (zoff + 16)) ]
+      maxPnt = pnt + (V3 r r r)
+      V3 lx ly lz = (\ x -> 16 * (floor $ fromIntegral x / 16)) <$> minPnt
+      V3 ux uy uz = (\ x -> 16 * (ceiling $ fromIntegral x / 16)) <$> maxPnt
+  in V.fromList [ V3 x y z
+                | x <- [lx,(lx+16)..ux]
+                , y <- [ly,(ly+16)..uy]
+                , z <- [lz,(lz+16)..uz] ]
 
 -- return vector of (offset, lutPoint)
 offsetsWithPoints :: (Double -> Double) -> V.Vector (V3 Int, Double)
