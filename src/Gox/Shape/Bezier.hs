@@ -428,7 +428,8 @@ calcOffsets radius pnt =
       minPnt = pnt - (V3 r r r)
       V3 xMax yMax zMax = pnt + (V3 r r r)
       V3 xoff yoff zoff = (\ x -> 16 * (floor $ fromIntegral x / 16)) <$> minPnt
-  in case (xoff + 15 >= xMax, yoff + 15 >= yMax, zoff + 15 >= zMax) of
+  in if radius /= 5 then error "not 5"
+  else case (xoff + 15 >= xMax, yoff + 15 >= yMax, zoff + 15 >= zMax) of
        (True, True, True)    -> V.fromList [ (V3  xoff        yoff              zoff) ]
        (False, True, True)   -> V.fromList [ (V3  xoff        yoff              zoff)
                                            , (V3 (xoff + 16)  yoff              zoff) ]
@@ -461,7 +462,8 @@ calcOffsets radius pnt =
 offsetsWithPoints :: (Double -> Double) -> V.Vector (V3 Int, Double)
                   -> V.Vector (V3 Int, (V3 Int, Double))
 offsetsWithPoints f = V.foldl (\ acc (pnt, t) ->
-                                 let os = calcOffsets t pnt
+                                 let r = f t
+                                     os = calcOffsets r pnt
                                      osPnts = (, (pnt, t)) <$> os
                                  in osPnts V.++ acc
                               ) V.empty
