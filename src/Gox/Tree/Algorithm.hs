@@ -47,7 +47,6 @@ stemFromDepth sDepth = Stem
   , sParent         = Nothing
   , sOffset         = 0
   , sRadiusLimit    = -1
-  , sChildren       = []
   , sLength         = 0
   , sRadius         = 0
   , sLengthChildMax = 0
@@ -110,7 +109,7 @@ calcTangentToBezier offset startPoint endPoint =
            co2 = bpControl endPoint
            hl2 = bpHandleLeft endPoint
            invOffset = 1 - offset 
-       in 2 * (invOffset ^ (2 :: Int)) *^ (hr1 - co1)
+       in 3 * (invOffset ^ (2 :: Int)) *^ (hr1 - co1)
           + 6 * invOffset * offset *^ (hl2 - hr1)
           + 3 * (offset ^ (2 :: Int)) *^ (co2 - hl2)
 
@@ -161,22 +160,24 @@ getParent tree stem = do
 calcStemLength :: RandomGen g => TreeL -> StemL -> C g r Double
 calcStemLength tree stem = do
   Parameters {..} <- ask
-  result <- callCC $ \ break -> do
-    whenM (use (stem % #sDepth) <&> (== 0)) $ do
-      r <- getRandomR (-1, 1)
-      treeScale <- use $ tree % #tTreeScale
-      res <- tree % #tTrunkLength <.= (treeScale * ((pLength V.! 0) + r * (pLengthV V.! 0)))
-      break res
-    whenM (use (stem % #sDepth) <&> (== 1)) $ do
-      parent <- getParent tree stem
-      baseLength <- use $ tree % #tBaseLength
-      offset <- use $ stem % #sOffset
-      shapeRatio <- calcShapeRatio pShape $
-        (parent^. #sLength - offset) / (parent^. #sLength - baseLength)
-      break $ (parent^. #sLength) * (parent^. #sLengthChildMax) * shapeRatio
-    parent <- getParent tree stem
-    offset <- use $ stem % #sOffset
-    return $ (parent^. #sLengthChildMax) * (parent^. #sLength - 0.7 * offset)
+  depth <- use $ stem % #sDepth
+  result <- case depth of
+              0 -> do -- trunk
+                r <- getRandomR (-1, 1)
+                treeScale <- use $ tree % #tTreeScale
+                tree % #tTrunkLength <.=
+                  (treeScale * ((pLength V.! 0) + r * (pLengthV V.! 0)))
+              1 -> do -- first level
+                parent <- getParent tree stem
+                baseLength <- use $ tree % #tBaseLength
+                offset <- use $ stem % #sOffset
+                shapeRatio <- calcShapeRatio pShape $
+                  (parent^. #sLength - offset) / (parent^. #sLength - baseLength)
+                return $ (parent^. #sLength) * (parent^. #sLengthChildMax) * shapeRatio
+              _ -> do
+                parent <- getParent tree stem
+                offset <- use $ stem % #sOffset
+                return $ (parent^. #sLengthChildMax) * (parent^. #sLength - 0.7 * offset)
   return $ max 0 result
 
 calcStemRadius :: TreeL -> StemL -> C g r Double

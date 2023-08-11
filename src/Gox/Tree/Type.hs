@@ -116,7 +116,6 @@ data Stem = Stem
   , sParent         :: Maybe Int
   , sOffset         :: Double
   , sRadiusLimit    :: Double
-  , sChildren       :: [Int]
   , sLength         :: Double
   , sRadius         :: Double
   , sLengthChildMax :: Double
