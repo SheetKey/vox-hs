@@ -583,8 +583,8 @@ sassafrasP = defaultP
   , pTropism        = V3 0 0 0.5
   }                  
 
-silverrBirchP :: Parameters
-silverrBirchP = defaultP
+silverBirchP :: Parameters
+silverBirchP = defaultP
   { pShape          = TaperedCylindrical
   , pGScale         = 20
   , pGScaleV        = 5
