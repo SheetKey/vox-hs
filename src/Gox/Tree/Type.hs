@@ -45,15 +45,15 @@ import qualified Data.Map.Strict as M
 
 data BranchMode = Fan | Whorled | AltOpp
 
-data PShape = Spherical
-            | Hemispherical
-            | Cylindrical
-            | TaperedCylindrical
-            | Flame
-            | InverseConical
-            | TendFlame
-            | Envelope
-            | Conical
+data PShape = Spherical          -- 0
+            | Hemispherical      -- 1
+            | Cylindrical        -- 2
+            | TaperedCylindrical -- 3
+            | Flame              -- 4
+            | InverseConical     -- 5
+            | TendFlame          -- 6
+            | Envelope           -- 7
+            | Conical            -- 8
 
 data Parameters = Parameters
   { pShape          :: PShape    -- 0-8
