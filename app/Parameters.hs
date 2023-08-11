@@ -585,7 +585,7 @@ sassafrasP = defaultP
 
 silverrBirchP :: Parameters
 silverrBirchP = defaultP
-  { pShape          = 3
+  { pShape          = TaperedCylindrical
   , pGScale         = 20
   , pGScaleV        = 5
   , pLevels         = 3
