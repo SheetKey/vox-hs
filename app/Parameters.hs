@@ -739,7 +739,7 @@ weepingWillowP = defaultP
 
 weepingWillow2P :: Parameters
 weepingWillow2P = defaultP
-  { pShape          = TaperedCylindraical
+  { pShape          = TaperedCylindrical
   , pGScale         = 15
   , pGScaleV        = 5
   , pLevels         = 4
