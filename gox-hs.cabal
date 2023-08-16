@@ -36,6 +36,7 @@ library
                      --Gox.Tree
                      Gox.Tree.Type
                      Gox.Tree.Algorithm
+                     GLVoxInfo
 
     -- Modules included in this executable, other than Main.
     -- other-modules:
