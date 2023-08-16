@@ -26,66 +26,44 @@ import Codec.Picture.Types
 -- pretty-simple
 import Text.Pretty.Simple (pPrint)
 
+mkGF :: Parameters -> Int -> Bool -> Double -> Double -> GoxFile
+mkGF p g b x y =
+  let tree = constructTree p g b
+      shape = fmap TBC $ treeToTapered $ scaleFilterTree x y $ tree
+  in drawShape shape emptyGoxFile
+
+treeToFile :: Parameters -> Int -> Bool -> Double -> Double -> String -> IO ()
+treeToFile p g b x y f = do
+  putStrLn $ "starting: " ++ show f
+  let tree = constructTree p g b
+      shape = fmap TBC $ treeToTapered $ scaleFilterTree x y $ tree
+      gox = drawShape shape emptyGoxFile
+  writeGoxFile f gox
+  putStrLn "done"
+
 main :: IO ()
 main = do
-  --let p0 = V3 0 0 0
-  --    p1 = V3 (1/3) 0 0
-  --    p2 = V3 (2/3) (1/3) 0
-  --    p3 = V3 1 1 1
-  --    mat = mkS2 p0 p1 p2 p3
-  --    (_, s, v) = svd mat
-  --    mat1 = mkS1 p0 p1 p2 p3
-  --    (_, s1, v1) = svd mat1
-  --print mat
-  --putStrLn " "
-  --print $ nullspace mat
-  --putStrLn " "
-  --print s
-  --putStrLn " "
-  --print v
-  --putStrLn " "
-  --print mat1
-  --putStrLn " "
-  --print $ nullspace mat1
-  --putStrLn " "
-  --print s1
-  --putStrLn " "
-  --print v1
-  --putStrLn " "
-  --print $ nullS1toM (nullspace mat1)
-  --putStrLn " "
-  --print $ deltaS1 (nullS1toM (nullspace mat1)) (V3 0 0 0)
-  --print $ deltaS1 (nullS1toM (nullspace mat1)) (V3 1 0 0)
-  --print $ deltaS1 (nullS1toM (nullspace mat1)) (V3 1 1 0)
-  --print $ deltaS1 (nullS1toM (nullspace mat1)) (V3 1 1 1)
-
-  
-  let tree = constructTree aspen 12345 False
-      shape = fmap TBC $ treeToTapered $ scaleFilterTree 200 0.5 $ tree
-      --shape = TBC $ TaperedBezierCurve { taperedBezierCurve = CubicBezier
-      --                                                        { cx0 = 0
-      --                                                        , cy0 = 0
-      --                                                        , cz0 = 0
-      --                                                        , cx1 = 0
-      --                                                        , cy1 = 50
-      --                                                        , cz1 = 50
-      --                                                        , cx2 = 50
-      --                                                        , cy2 = 100
-      --                                                        , cz2 = 50
-      --                                                        , cx3 = 150
-      --                                                        , cy3 = 0
-      --                                                        , cz3 = 150
-      --                                                        }
-      --                                 , taperingFunction = const 5
-      --                                 , taperMaxRadius = 2
-      --                                 }
-      goxFile = drawShape shape emptyGoxFile
-  print $ V.length shape
-  --pPrint shape
-  --putStrLn " "
-  --print goxFile
-  -- putStrLn " "
-  writeGoxFile "./test.gox" goxFile 
+  -- treeToFile defaultP 12343 False 25 0.01 "./gen/default.gox"
+  -- treeToFile acerP 12343 False 30 0.01 "./gen/acer.gox"
+  -- treeToFile appleP 12343 False 15 0.1 "./gen/apple.gox"
+  treeToFile balsamFirP 12343 False 15 0.1 "./gen/balsamFir.gox"
+  -- treeToFile bambooP 12343 False 15 0.1 "./gen/bamboo.gox"
+  -- treeToFile blackOakP 12343 False 10 0.1 "./gen/blackOak.gox"
+  -- treeToFile blackTupeloP 12343 False 10 0.1 "./gen/blackTupelo.gox"
+  treeToFile cambridgeOakP 12343 False 17 0.1 "./gen/cambridgeOak.gox"
+  -- treeToFile douglasFirP 12343 False 10 0.1 "./gen/douglasFir.gox"
+  treeToFile europeanLarchP 12343 False 15 0.1 "./gen/europeanLarch.gox"
+  -- treeToFile fanPalmP 12343 False 40 0.1 "./gen/fanPalm.gox"
+  treeToFile hillCherryP 12343 False 13 0.1 "./gen/hillCherry.gox"
+  -- treeToFile lombardyPoplarP 12343 False 15 0.1 "./gen/lombardyPoplar.gox"
+  -- treeToFile palmP 12343 False 50 0.1 "./gen/palm.gox"
+  -- treeToFile quakingAspenP 12343 False 15 0.1 "./gen/quakingAspen.gox"
+  treeToFile sassafrasP 12343 False 9 0.1 "./gen/sassafras.gox"
+  treeToFile silverBirchP 12343 False 15 0.1 "./gen/silverBirch.gox"
+  -- treeToFile smallPineP 12343 False 30 0.1 "./gen/smallPine.gox"
+  -- treeToFile sphereTreeP 12343 False 30 0.1 "./gen/sphereTree.gox"
+  treeToFile weepingWillowP 12343 False 15 0.1 "./gen/weepingWillow.gox"
+  treeToFile weepingWillow2P 12343 False 15 0.1 "./gen/weepingWillow2.gox"
   --withGoxFile "./test.gox" print
 
   -- writeGoxFile "./test.gox" $ addMaterial Nothing (V4 10 0 0 1) 0.5 0.3 (V3 0 0 0) defaultGoxFile
