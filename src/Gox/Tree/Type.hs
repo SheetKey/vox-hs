@@ -60,6 +60,7 @@ data Parameters = Parameters
   , pGScale         :: Double    -- >0, scale of the tree
   , pGScaleV        :: Double    -- max variation of 'gScale'
   , pLevels         :: Int       -- > 0, often 3 or 4. Number of levels of branching
+  , pMaxLevel       :: Int       -- almost always 3: 'pMaxLevel + 1' should equal length of all vector parameters
   , pRatio          :: Double    -- > 0, ratio of the stem length to radius
   , pRatioPower     :: Double    -- how drastically branch radius is reduced between levels
   , pFlare          :: Double    -- how much the radius of the base trunk increases
@@ -318,6 +319,14 @@ newVar str a = do
               ( lens (_getter (getWType a) str) (_setter str)
               , lift $ _free str
               )
+
+newVarWithInt :: Wrappable a => Int -> String -> a
+  -> C g r (Lens' (M.Map String Wrapper) a, C g r ())
+newVarWithInt i str a = do
+  sm <- get
+  if (str ++ show i) `M.member` sm
+    then newVarWithInt (i+1) str a
+    else newVar (str ++ show i) a
 
 newStemVar :: TreeL -> Stem -> C g r StemL
 newStemVar tree stem = do
