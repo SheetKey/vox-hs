@@ -22,9 +22,9 @@ import Codec.Picture.Types
 type ChunkSize = Word32
 
 data GoxFile = GoxFile
-  { blocks :: V.Vector BL16
-  , layers :: V.Vector LAYR
-  , materials :: V.Vector Material
+  { blocks :: !(V.Vector BL16)
+  , layers :: !(V.Vector LAYR)
+  , materials :: !(V.Vector Material)
   }
   deriving (Show)
 
@@ -36,7 +36,7 @@ data GoxChunk = GBL16 BL16
               deriving (Show)
 
 data BL16 = BL16
-  { voxelData :: Image PixelRGBA8
+  { voxelData :: !(Image PixelRGBA8)
   }
 instance Show BL16 where
   show _ = "BL16"
