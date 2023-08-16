@@ -1,5 +1,5 @@
 cabal-version:      2.4
-name:               gox-hs
+name:               vox-hs
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
@@ -73,7 +73,7 @@ executable demo
     other-modules:    Parameters
     hs-source-dirs:   app
     build-depends:    base ^>=4.16.1.0
-                    , gox-hs
+                    , vox-hs
                     , linear
                     , vector 
                     , hmatrix
