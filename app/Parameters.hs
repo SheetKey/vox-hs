@@ -19,6 +19,7 @@ defaultP = Parameters
   , pGScale         = 13
   , pGScaleV        = 3
   , pLevels         = 3
+  , pMaxLevel       = 3
   , pRatio          = 0.015
   , pRatioPower     = 1.2
   , pFlare          = 0.6
@@ -131,7 +132,7 @@ appleP = defaultP
   }                  
 
 balsamFirP :: Parameters
-balsamFirP = Parameters
+balsamFirP = defaultP
   { pShape          = Spherical
   , pGScale         = 12
   , pGScaleV        = 2
@@ -233,7 +234,7 @@ blackOakP = defaultP
   }                  
 
 blackTupeloP :: Parameters
-blackTupeloP = Parameters
+blackTupeloP = defaultP
   { pShape          = Flame
   , pGScale         = 23
   , pGScaleV        = 5
@@ -451,7 +452,7 @@ hillCherryP = defaultP
   }                  
 
 lombardyPoplarP :: Parameters
-lombardyPoplarP = Parameters
+lombardyPoplarP = defaultP
   { pShape          = Cylindrical
   , pGScale         = 25
   , pGScaleV        = 5
@@ -655,7 +656,7 @@ smallPineP = defaultP
   }                  
 
 sphereTreeP :: Parameters
-sphereTreeP = Parameters
+sphereTreeP = defaultP
   { pShape          = TaperedCylindrical
   , pGScale         = 6
   , pGScaleV        = 0
