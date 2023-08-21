@@ -25,7 +25,6 @@ extra-source-files:
     README.org
 
 library
-    visibility:      public
     exposed-modules: Gox
                      Gox.Type
                      Gox.Parse
