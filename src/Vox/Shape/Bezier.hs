@@ -4,13 +4,14 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Gox.Shape.Bezier where
+module Vox.Shape.Bezier where
 
 -- gox-hs
-import Gox.Shape
-import Gox.Type
-import Gox.Util
-import Gox.Tree.Type
+import Vox.Shape.AABB
+import Vox.Shape.Class
+import Vox.Shape.Util
+import Vox.Gox
+import Vox.Tree.Type
 
 -- base
 import Control.Applicative (liftA2)

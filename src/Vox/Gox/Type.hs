@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Gox.Type where
+module Vox.Gox.Type where
 
 -- base
 import Data.Word

@@ -8,10 +8,10 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Gox.Tree.Type where
+module Vox.Tree.Type where
 
 -- gox-hs
-import Gox.Turtle
+import Vox.Tree.Turtle
 
 -- base
 import Control.Arrow

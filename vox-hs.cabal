@@ -25,18 +25,21 @@ extra-source-files:
     README.org
 
 library
-    exposed-modules: Gox
-                     Gox.Type
-                     Gox.Parse
-                     Gox.Write
-                     Gox.Util
-                     Gox.Shape
-                     Gox.Shape.Bezier
-                     Gox.Turtle
-                     --Gox.Tree
-                     Gox.Tree.Type
-                     Gox.Tree.Algorithm
-                     GLVoxInfo
+    exposed-modules: Vox.Gox
+                   , Vox.Gox.Parse
+                   , Vox.Gox.Type
+                   , Vox.Gox.Util
+                   , Vox.Gox.Write
+                   , Vox.Shape
+                   , Vox.Shape.AABB
+                   , Vox.Shape.Bezier
+                   , Vox.Shape.Class
+                   , Vox.Shape.Util
+                   , Vox.Tree
+                   , Vox.Tree.Algorithm
+                   , Vox.Tree.Turtle
+                   , Vox.Tree.Type
+                   , Vox.GLVoxInfo                     
 
     -- Modules included in this executable, other than Main.
     -- other-modules:

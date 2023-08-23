@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Gox.Turtle where
+module Vox.Tree.Turtle where
 
 -- base
 import GHC.Generics (Generic)

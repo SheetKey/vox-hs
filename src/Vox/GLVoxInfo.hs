@@ -1,7 +1,7 @@
-module GLVoxInfo where
+module Vox.GLVoxInfo where
 
 -- vox-hs
-import qualified Gox.Type as G
+import qualified Vox.Gox as G
 
 -- base
 import Data.Word

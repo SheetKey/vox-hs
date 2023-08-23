@@ -1,9 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Gox.Write where
+module Vox.Gox.Write where
 
 -- vox-hs
-import Gox.Type
+import Vox.Gox.Type
 
 -- base
 import System.IO (withBinaryFile, IOMode(..))

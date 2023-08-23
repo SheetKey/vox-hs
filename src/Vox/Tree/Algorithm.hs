@@ -2,11 +2,11 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
-module Gox.Tree.Algorithm where
+module Vox.Tree.Algorithm where
 
 -- gox-hs
-import Gox.Turtle
-import Gox.Tree.Type
+import Vox.Tree.Turtle
+import Vox.Tree.Type
 
 -- base
 import Data.Fixed (mod')

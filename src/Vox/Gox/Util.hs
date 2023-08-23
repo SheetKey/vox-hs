@@ -1,9 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Gox.Util where
+module Vox.Gox.Util where
 
 -- vox-hs
-import Gox.Type
+import Vox.Gox.Type
 
 -- base
 import Data.Int
