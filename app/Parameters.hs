@@ -1,7 +1,7 @@
 module Parameters where
 
 -- gox-hs
-import Gox.Tree.Type
+import Vox.Tree.Type
 
 -- linear
 import Linear

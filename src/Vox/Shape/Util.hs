@@ -1,4 +1,4 @@
-module Vox.Shape.Utile where
+module Vox.Shape.Util where
 
 -- linear
 import Linear hiding (_x, _y, _z)

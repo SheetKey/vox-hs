@@ -4,10 +4,10 @@ module Main where
 import Parameters
 
 -- gox-hs
-import Gox
-import Gox.Tree.Type
-import Gox.Tree.Algorithm
-import Gox.Shape.Bezier
+import Vox.Gox
+import Vox.Tree
+import Vox.Tree
+import Vox.Shape
 
 -- vector
 import qualified Data.Vector as V

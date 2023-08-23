@@ -1,12 +1,18 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Vox.Shape.Class where
 
 -- gox-hs
 import Vox.Gox
 import Vox.Tree.Type
+import Vox.Shape.AABB
 
 -- base
 import Control.Applicative (liftA2)
 import Control.Monad (join)
+
+-- linear
+import Linear
 
 -- vector
 import qualified Data.Vector as V
