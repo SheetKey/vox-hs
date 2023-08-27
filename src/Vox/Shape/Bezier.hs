@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -26,7 +27,7 @@ import qualified Data.Vector.Storable as VS
 import Linear hiding (vector, _x, _y, _z, trace)
 
 -- hmatrix
-import Numeric.LinearAlgebra hiding ((<>))
+import Numeric.LinearAlgebra hiding ((<>), cross, normalize)
 import qualified Numeric.LinearAlgebra as LA
 
 -- optics-core
@@ -96,6 +97,7 @@ class Bezier a where
   bezieraabb :: a -> AABB
   extrema :: a -> V3 [Double]
   deriv :: a -> Deriv a
+  
 
   bezieraabb bezier =
     let (V3 xPoints yPoints zPoints) = (fmap . fmap) (compute bezier) (extrema bezier)
@@ -109,6 +111,18 @@ class Bezier a where
             , uy = ceiling $ maximum ys
             , uz = ceiling $ maximum zs
             }
+
+tangent :: (Bezier a, Bezier (Deriv a)) => a -> Double -> V3 Double
+tangent b t = fst $ (compute . deriv) b t
+
+normal :: (Bezier a, Bezier (Deriv a), Bezier (Deriv (Deriv a)))
+       => a -> Double -> V3 Double
+normal bezier t =
+    let b' = deriv bezier
+        b'' = deriv b'
+        a = normalize $ fst $ compute b' t
+        b = normalize $ (+ a) $ fst $ compute b'' t
+    in normalize $ cross a b
 
 data LinearBezier = LinearBezier
   { lx0 :: Double 

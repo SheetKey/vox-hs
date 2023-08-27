@@ -39,6 +39,7 @@ library
                    , Vox.Tree.Algorithm
                    , Vox.Tree.Turtle
                    , Vox.Tree.Type
+                   , Vox.Tree.Renderable
                    , Vox.GLVoxInfo                     
 
     -- Modules included in this executable, other than Main.
