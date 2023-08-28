@@ -40,6 +40,7 @@ library
                    , Vox.Tree.Turtle
                    , Vox.Tree.Type
                    , Vox.Tree.Renderable
+                   , Vox.Tree.Parameters
                    , Vox.GLVoxInfo                     
 
     -- Modules included in this executable, other than Main.
@@ -74,7 +75,7 @@ library
 
 executable demo
     main-is:          Main.hs
-    other-modules:    Parameters
+    -- other-modules:    
     hs-source-dirs:   app
     build-depends:    base ^>=4.16.1.0
                     , vox-hs
