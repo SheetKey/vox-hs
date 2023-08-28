@@ -25,10 +25,16 @@ data RCurve = RCurve
 
 type RStem = RCurve
 
-type RTree = V.Vector RStem
+data RTree = RTree
+  { curves :: V.Vector RStem
+  , baseRadius :: Double
+  }
 
 fromTree :: Int -> Tree -> RTree
-fromTree n = (fmap (fromStem n)) . tStems
+fromTree n tree =
+  let curves = fmap (fromStem n) $ tStems tree
+      baseRadius = bpRadius $ (V.! 0) $ bezierPoints $ sCurve $ (V.! 0) $ tStems tree
+  in RTree {..}
 
 fromStem :: Int -> Stem -> RStem
 fromStem n = fromCurve n . sCurve
