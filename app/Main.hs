@@ -1,11 +1,7 @@
 module Main where
 
--- app
-import Parameters
-
 -- gox-hs
 import Vox.Gox
-import Vox.Tree
 import Vox.Tree
 import Vox.Shape
 

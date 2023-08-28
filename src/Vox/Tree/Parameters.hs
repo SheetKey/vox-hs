@@ -1,4 +1,4 @@
-module Parameters where
+module Vox.Tree.Parameters where
 
 -- gox-hs
 import Vox.Tree.Type

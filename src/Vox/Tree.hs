@@ -5,3 +5,4 @@ module Vox.Tree
 import Vox.Tree.Algorithm as X
 import Vox.Tree.Type as X
 import Vox.Tree.Turtle as X
+import Vox.Tree.Parameters as X
