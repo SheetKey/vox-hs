@@ -51,12 +51,12 @@ ngon n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
 nIndices :: Int -> VS.Vector Word32
 nIndices n = VS.concat
   [ VS.generate 6 $ \case
-      0 -> nth
-      1 -> nth + 1
-      2 -> nth + fromIntegral n 
-      3 -> nth + fromIntegral n 
-      4 -> (nth + fromIntegral n + 1) `mod` (2 * fromIntegral n)
-      5 -> (nth + 1) `mod` n
+      0 -> fromIntegral $ nth
+      1 -> fromIntegral $ nth + 1
+      2 -> fromIntegral $ nth + n 
+      3 -> fromIntegral $ nth + n 
+      4 -> fromIntegral $ (nth + n + 1) `mod` (2 * n)
+      5 -> fromIntegral $ (nth + 1) `mod` n
       _ -> error "not possible ('nIndices')"
   | nth <- fromIntegral <$> [0..(n-1)]
   ]
