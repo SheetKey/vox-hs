@@ -70,16 +70,10 @@ taperedNGon t n TaperedBezierCurve {..} = ngon n (taperingFunction t)
                                           (normal taperedBezierCurve t)
                                           (fst $ compute taperedBezierCurve t)
 
-taperedStartNGon :: Int -> TaperedBezierCurve CubicBezier -> VS.Vector Float
-taperedStartNGon = taperedNGon 0
-
-taperedEndNGon :: Int -> TaperedBezierCurve CubicBezier -> VS.Vector Float
-taperedEndNGon = taperedNGon 1
-
 fromCurve :: Int -> Curve -> RCurve
 fromCurve n c =
   let bc = curveToTapered c
-      firstGon = taperedStartNGon n (bc V.! 0)
-      vertices = V.foldl' (\ acc c -> acc VS.++ taperedEndNGon n c ) firstGon bc
-      indices = genIndices n (V.length bc)
+      firstGon = taperedNGon 0 n (bc V.! 0)
+      vertices = V.foldl' (\ acc c -> acc VS.++ (taperedNGon 0.5 n c VS.++ taperedNGon 1 n c)) firstGon bc
+      indices = genIndices n (2 * V.length bc)
   in RCurve {..}
