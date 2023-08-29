@@ -53,10 +53,10 @@ nIndices n = VS.concat
   [ VS.generate 6 $ \case
       0 -> nth
       1 -> nth + 1
-      2 -> fromIntegral n + nth
-      3 -> fromIntegral n + nth
-      4 -> fromIntegral n + nth + 1
-      5 -> nth + 1
+      2 -> nth + fromIntegral n 
+      3 -> nth + fromIntegral n 
+      4 -> (nth + fromIntegral n + 1) `mod` (2 * fromIntegral n)
+      5 -> (nth + 1) `mod` n
       _ -> error "not possible ('nIndices')"
   | nth <- fromIntegral <$> [0..(n-1)]
   ]
@@ -79,7 +79,7 @@ taperedEndNGon = taperedNGon 1
 fromCurve :: Int -> Curve -> RCurve
 fromCurve n c =
   let bc = curveToTapered c
-      firstGon = taperedStartNGon 5 (bc V.! 0)
+      firstGon = taperedStartNGon n (bc V.! 0)
       vertices = V.foldl' (\ acc c -> acc VS.++ taperedEndNGon n c ) firstGon bc
       indices = genIndices n (V.length bc)
   in RCurve {..}
