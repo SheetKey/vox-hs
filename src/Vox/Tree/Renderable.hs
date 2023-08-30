@@ -109,7 +109,7 @@ fromCurveD :: Int -> Curve -> RCurve
 fromCurveD n c =
   let bc = curveToTapered c
       vertices = V.ifoldl'
-        (\ acc i c -> let tf = i =/ V.length bc - 1
+        (\ acc i c -> let tf = i /= V.length bc - 1
                       in acc VS.++ (VS.concat [ taperedNGonD tf 0 n c
                                               , taperedNGonD tf 0.5 n c
                                               , taperedNGonD tf 1 n c ]
