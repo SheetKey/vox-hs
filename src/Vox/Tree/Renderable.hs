@@ -22,6 +22,7 @@ data RCurve = RCurve
   { vertices :: VS.Vector Float -- GLfloat for vbo
   , indices :: VS.Vector Word32 -- GLunit for ebo
   }
+  deriving (Show)
 
 type RStem = RCurve
 
@@ -29,6 +30,7 @@ data RTree = RTree
   { curves :: V.Vector RStem
   , baseRadius :: Double
   }
+  deriving (Show)
 
 fromTree :: Int -> Tree -> RTree
 fromTree n tree =
