@@ -48,6 +48,7 @@
             cabal-install
             haskell-language-server
             haskellPackages.implicit-hie
+            cabal2nix
           ];
           inputsFrom = builtins.attrValues self.packages.${system};
         };
