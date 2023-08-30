@@ -58,8 +58,10 @@ ngonD tf n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
       rotQuat = axisAngle tangentVec angle
       pnt = rotate rotQuat $ normalVec ^* radius
       V3 x y z = double2Float <$> (centerVec + pnt)
-  in trace (if tf && (pnt == (V3 0 0 0)) then "pnt==0" else "") $
-     VS.fromList [x, y, z])
+  in if tf && (pnt == (V3 0 0 0))
+     then trace "pnt==0" $
+          VS.fromList [x, y, z]
+     else VS.fromList [x, y, z])
   (VS.generate n id)
 
 nIndices :: Int -> VS.Vector Word32
@@ -86,8 +88,8 @@ taperedNGon t n TaperedBezierCurve {..} = ngon n (taperingFunction t)
                                           (normal taperedBezierCurve t)
                                           (fst $ compute taperedBezierCurve t)
 
-taperedNGonD :: Bool -> Double -> Int -> TaperedBezierCurve Cubic Bezier -> VS.Vector Float
-taperedNGonD tf t n TaperedBezierCurve {..} = ngonD tf n (tapereingFunction t)
+taperedNGonD :: Bool -> Double -> Int -> TaperedBezierCurve CubicBezier -> VS.Vector Float
+taperedNGonD tf t n TaperedBezierCurve {..} = ngonD tf n (taperingFunction t)
                                              (tangent taperedBezierCurve t)
                                              (normal taperedBezierCurve t)
                                              (fst $ compute taperedBezierCurve t)
@@ -107,9 +109,10 @@ fromCurveD :: Int -> Curve -> RCurve
 fromCurveD n c =
   let bc = curveToTapered c
       vertices = V.ifoldl'
-        (\ acc i c -> let tf = i == V.length bc - 1
+        (\ acc i c -> let tf = (i == V.length bc - 1) || (i == 0)
                       in acc VS.++ (VS.concat [ taperedNGonD tf 0 n c
                                               , taperedNGonD tf 0.5 n c
                                               , taperedNGonD tf 1 n c ]
                                    )) VS.empty bc
       indices = genIndices n ((3 * V.length bc) - 1)
+  in RCurve {..}
