@@ -48,8 +48,16 @@ ngon n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
       rotQuat = axisAngle tangentVec angle
       pnt = rotate rotQuat $ normalVec ^* radius
       V3 x y z = double2Float <$> (centerVec + pnt)
-  in if pnt == (V3 0 0 0) then trace "pnt==0" $
-                               VS.fromList [x, y, z]
+  in if pnt == (V3 0 0 0)
+     then trace (unlines
+                [ "pnt: ", show pnt
+                , "tang: ", show tangentVec
+                , "norm: ", show normalVec
+                , "cent: ", show centerVec
+                , "angle: ", show angle
+                , "rotQuat: ", show rotQuat
+                ]) $
+          VS.fromList [x, y, z]
   else VS.fromList [x, y, z])
   (VS.generate n id)
 
