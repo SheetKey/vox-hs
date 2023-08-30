@@ -133,8 +133,8 @@ normal bezier t =
   let tangentVec = tangent bezier t
   in case tangentVec of
        (V3 a b c) -> if a /= (negate b)
-                     then normalize $ tVec `cross` (V3 c c (negate $ a + b))
-                     else normalize $ tVec `cross` (V3 (negate $ b + c) a a)
+                     then normalize $ tangentVec `cross` (V3 c c (negate $ a + b))
+                     else normalize $ tangentVec `cross` (V3 (negate $ b + c) a a)
 
 data LinearBezier = LinearBezier
   { lx0 :: Double 
