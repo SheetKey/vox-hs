@@ -6,7 +6,6 @@ module Vox.Tree.Renderable where
 -- base
 import Data.Word
 import GHC.Float (double2Float)
-import Debug.Trace (trace)
 
 -- vox-hs
 import Vox.Tree.Type
@@ -48,17 +47,7 @@ ngon n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
       rotQuat = axisAngle tangentVec angle
       pnt = rotate rotQuat $ normalVec ^* radius
       V3 x y z = double2Float <$> (centerVec + pnt)
-  in if pnt == (V3 0 0 0)
-     then trace (unlines
-                [ "pnt: ", show pnt
-                , "tang: ", show tangentVec
-                , "norm: ", show normalVec
-                , "cent: ", show centerVec
-                , "angle: ", show angle
-                , "rotQuat: ", show rotQuat
-                ]) $
-          VS.fromList [x, y, z]
-  else VS.fromList [x, y, z])
+  in VS.fromList [x, y, z])
   (VS.generate n id)
 
 nIndices :: Int -> VS.Vector Word32
