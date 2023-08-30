@@ -63,7 +63,7 @@ nIndices n = VS.concat
 
 genIndices :: Int -> Int -> VS.Vector Word32
 genIndices n l = VS.concatMap
-                 (\i -> VS.map (+ (i * (2 * fromIntegral n))) (nIndices n))
+                 (\i -> VS.map (+ (i * fromIntegral n)) (nIndices n))
                  (VS.generate l fromIntegral)
 
 taperedNGon :: Double -> Int -> TaperedBezierCurve CubicBezier -> VS.Vector Float
