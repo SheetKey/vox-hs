@@ -40,7 +40,7 @@ fromTree n tree =
   in RTree {..}
 
 fromStem :: Int -> Stem -> RStem
-fromStem n = fromCurveD n . sCurve
+fromStem n = fromCurve n . sCurve
 
 ngon :: Int -> Double -> V3 Double -> V3 Double -> V3 Double -> VS.Vector Float
 ngon n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
@@ -48,20 +48,9 @@ ngon n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
       rotQuat = axisAngle tangentVec angle
       pnt = rotate rotQuat $ normalVec ^* radius
       V3 x y z = double2Float <$> (centerVec + pnt)
-  in trace (if pnt == (V3 0 0 0) then "pnt==0" else "") $
-     VS.fromList [x, y, z])
-  (VS.generate n id)
-
-ngonD :: Bool -> Int -> Double -> V3 Double -> V3 Double -> V3 Double -> VS.Vector Float
-ngonD tf n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
-  let angle = (2 * pi) * (fromIntegral index + 1) / (fromIntegral n)
-      rotQuat = axisAngle tangentVec angle
-      pnt = rotate rotQuat $ normalVec ^* radius
-      V3 x y z = double2Float <$> (centerVec + pnt)
-  in if tf && (pnt == (V3 0 0 0))
-     then trace "pnt==0" $
-          VS.fromList [x, y, z]
-     else VS.fromList [x, y, z])
+  in if pnt == (V3 0 0 0) then trace "pnt==0" $
+                               VS.fromList [x, y, z]
+  else VS.fromList [x, y, z])
   (VS.generate n id)
 
 nIndices :: Int -> VS.Vector Word32
@@ -88,12 +77,6 @@ taperedNGon t n TaperedBezierCurve {..} = ngon n (taperingFunction t)
                                           (normal taperedBezierCurve t)
                                           (fst $ compute taperedBezierCurve t)
 
-taperedNGonD :: Bool -> Double -> Int -> TaperedBezierCurve CubicBezier -> VS.Vector Float
-taperedNGonD tf t n TaperedBezierCurve {..} = ngonD tf n (taperingFunction t)
-                                             (tangent taperedBezierCurve t)
-                                             (normal taperedBezierCurve t)
-                                             (fst $ compute taperedBezierCurve t)
-
 fromCurve :: Int -> Curve -> RCurve
 fromCurve n c =
   let bc = curveToTapered c
@@ -102,17 +85,5 @@ fromCurve n c =
                                          , taperedNGon 0.5 n c
                                          , taperedNGon 1 n c ]
                               )) VS.empty bc
-      indices = genIndices n ((3 * V.length bc) - 1)
-  in RCurve {..}
-
-fromCurveD :: Int -> Curve -> RCurve
-fromCurveD n c =
-  let bc = curveToTapered c
-      vertices = V.ifoldl'
-        (\ acc i c -> let tf = i /= V.length bc - 1
-                      in acc VS.++ (VS.concat [ taperedNGonD tf 0 n c
-                                              , taperedNGonD tf 0.5 n c
-                                              , taperedNGonD tf 1 n c ]
-                                   )) VS.empty bc
       indices = genIndices n ((3 * V.length bc) - 1)
   in RCurve {..}
