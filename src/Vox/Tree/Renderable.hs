@@ -13,7 +13,7 @@ import Vox.Tree.Type
 import Vox.Shape
 
 -- linear
-import Linear
+import Linear hiding (trace)
 
 -- vector
 import qualified Data.Vector as V
