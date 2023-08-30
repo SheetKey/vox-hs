@@ -123,8 +123,9 @@ normal bezier t =
         a = normalize $ fst $ compute b' t
         b = normalize $ (+ a) $ fst $ compute b'' t
         r = normalize $ cross b a
-    in if r /= (V3 0 0 0)
-       then normalize $ cross r a
+        n = normalize $ cross r a
+    in if n /= (V3 0 0 0)
+       then n
        else case tangent bezier t of
               tVec@(V3 a b c) -> if a /= (negate b)
                                  then normalize $ tVec `cross` (V3 c c (negate $ a + b))
