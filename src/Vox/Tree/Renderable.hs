@@ -55,7 +55,7 @@ nIndices n = VS.concat
       1 -> fromIntegral $ (nth + 1) `mod` n
       2 -> fromIntegral $ nth + n 
       3 -> fromIntegral $ nth + n 
-      4 -> fromIntegral $ n + (nth + 1 `mod` n) 
+      4 -> fromIntegral $ n + ((nth + 1) `mod` n) 
       5 -> fromIntegral $ (nth + 1) `mod` n
       _ -> error "not possible ('nIndices')"
   | nth <- fromIntegral <$> [0..(n-1)]
