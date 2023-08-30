@@ -122,7 +122,8 @@ normal bezier t =
         b'' = deriv b'
         a = normalize $ fst $ compute b' t
         b = normalize $ (+ a) $ fst $ compute b'' t
-    in normalize $ cross a b
+        r = normalize $ cross a b
+    in normalize $ cross r a
 
 data LinearBezier = LinearBezier
   { lx0 :: Double 
