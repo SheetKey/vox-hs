@@ -41,7 +41,7 @@ fromStem n = fromCurve n . sCurve
 
 ngon :: Int -> Double -> V3 Double -> V3 Double -> V3 Double -> VS.Vector Float
 ngon n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
-  let angle = (2 * pi) / (fromIntegral index + 1)
+  let angle = (2 * pi) * (fromIntegral index + 1) / (fromIntegral n)
       rotQuat = axisAngle tangentVec angle
       pnt = rotate rotQuat $ normalVec ^* radius
       V3 x y z = double2Float <$> (centerVec + pnt)
