@@ -52,10 +52,10 @@ nIndices :: Int -> VS.Vector Word32
 nIndices n = VS.concat
   [ VS.generate 6 $ \case
       0 -> fromIntegral $ nth
-      1 -> fromIntegral $ nth + 1
+      1 -> fromIntegral $ (nth + 1) `mod` n
       2 -> fromIntegral $ nth + n 
       3 -> fromIntegral $ nth + n 
-      4 -> fromIntegral $ (nth + n + 1) `mod` (2 * n)
+      4 -> fromIntegral $ n + (nth + 1 `mod` n) 
       5 -> fromIntegral $ (nth + 1) `mod` n
       _ -> error "not possible ('nIndices')"
   | nth <- fromIntegral <$> [0..(n-1)]
