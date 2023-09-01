@@ -79,8 +79,10 @@ fromCurve n c =
   let bc = curveToTapered c
       vertices = V.foldl'
         (\ acc c -> acc VS.++ (VS.concat [ taperedNGon 0 n c
+                                         , taperedNGon 0.25 n c
                                          , taperedNGon 0.5 n c
+                                         , taperedNGon 0.75 n c
                                          , taperedNGon 1 n c ]
                               )) VS.empty bc
-      indices = genIndices n ((3 * V.length bc) - 1)
+      indices = genIndices n ((5 * V.length bc) - 1)
   in RCurve {..}
