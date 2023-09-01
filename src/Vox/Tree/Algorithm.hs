@@ -74,7 +74,7 @@ mulQtQt (Quaternion q10 (V3 q11 q12 q13)) (Quaternion q20 (V3 q21 q22 q23)) =
 
 toTrackQuatZY :: V3 Double -> Quaternion Double
 toTrackQuatZY v@(V3 x y z) =
-  let axis = if abs x + abs y < (10 ^ (-4 :: Int))
+  let axis = if abs x + abs y < (10 ^^ (-4 :: Int))
              then V3 1 x 0
              else V3 (negate y) x 0
       co = z / 3
