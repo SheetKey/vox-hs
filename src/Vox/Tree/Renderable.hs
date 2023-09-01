@@ -45,8 +45,8 @@ ngon :: Int -> Double -> V3 Double -> V3 Double -> V3 Double -> VS.Vector Float
 ngon n radius tangentVec normalVec centerVec = VS.concatMap (\ index ->
   let angle = (2 * pi) * (fromIntegral index + 1) / (fromIntegral n)
       rotQuat = axisAngle tangentVec angle
-      pnt@(V3 nx ny nz) = rotate rotQuat $ normalVec ^* radius
-      V3 x y z = double2Float <$> (centerVec + pnt)
+      pnt@(V3 nx ny nz) = double2Float <$> (rotate rotQuat $ normalVec ^* radius)
+      V3 x y z = (double2Float <$> centerVec) + pnt
   in VS.fromList [x, y, z, nx, ny, nz])
   (VS.generate n id)
 
