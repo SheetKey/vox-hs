@@ -77,13 +77,14 @@ toTrackQuatZY v@(V3 x y z) =
   let axis = if abs x + abs y < (10 ^^ (-4 :: Int))
              then V3 1 x 0
              else V3 (negate y) x 0
-      co = z / 3
+      len = norm v
+      co = z / len
       q = axisAngle axis (saacos co)
       mat = fromQuaternion q
       fp = mat L.^._z
       angle = -0.5 * atan2 (negate fp L.^._x) (negate fp L.^._y)
       co' = cos angle
-      si' = (sin angle) / 3
+      si' = (sin angle) / len
       q2 = Quaternion co' (v ^* si')
   in mulQtQt q q2
 
@@ -124,7 +125,7 @@ calcHelixPoints turtle rad pitch = do
       p2 = V3 (4 * rad / 3) rad 0
       p3 = V3 0 rad (pitch / 4) 
       trf = toTrackQuatZY dir
-      rotQuat = Quaternion spinAng (V3 0 0 1)
+      rotQuat = axisAngle (V3 0 0 1) spinAng
       p0' = rotate trf $ rotate rotQuat p0
       p1' = rotate trf $ rotate rotQuat p1
       p2' = rotate trf $ rotate rotQuat p2
@@ -1108,7 +1109,7 @@ makeStem tree stem turtle start splitCorrAngle numBranchesFactor cloneProb posCo
   clonedTurtle = do
   Parameters {..} <- ask
   depth <- use $ stem % #sDepth
-  if pCurveRes V.! depth < 0
+  if pCurveV V.! depth < 0
     then makeStemHelix tree stem turtle start splitCorrAngle numBranchesFactor cloneProb
          posCorrTurtle clonedTurtle
     else makeStemRegular tree stem turtle start splitCorrAngle numBranchesFactor cloneProb
